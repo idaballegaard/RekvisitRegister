@@ -32,6 +32,8 @@ Brugerens dokument indeholder `firstName`, `lastName`, `userName`, `passwordHash
 
 Sæt `AUTH_TOKEN_SECRET` i `backend/.env` til en tilfældig hemmelighed på mindst 32 bytes. Du kan generere en med `openssl rand -base64 32`. Hold værdien hemmelig, og skift den ikke, mens aktive tokens stadig skal virke. Login-endpointet accepterer JSON med `userName` og `password`:
 
+Start backend lokalt med `npm --prefix backend run start-dev`, og åbn `http://localhost:3000/api-docs` for Swagger UI. Brug `POST /auth/login` med brugerens almindelige adgangskode (ikke bcrypt-hashen) for at prøve login mod den konfigurerede database. Klik **Authorize** og indsæt `accessToken`-værdien fra svaret for derefter at prøve `GET /auth/me`. Swagger UI er kun aktiveret uden for `NODE_ENV=production`. Brug kun testkonti til manuel afprøvning, og del ikke tokens.
+
 ```http
 POST /auth/login
 Content-Type: application/json
