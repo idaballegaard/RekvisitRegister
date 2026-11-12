@@ -26,4 +26,8 @@ INITIAL_ADMIN_PASSWORD=brug-en-unik-adgangssætning-på-mindst-12-tegn
 
 Kør derefter `npm --prefix backend run bootstrap:admin` én gang. Scriptet opretter foreningen og den første bruger i en transaktion. Det stopper, hvis databasen allerede indeholder en forening eller en bruger. Adgangskoden gemmes som bcrypt-hash; brugernavne normaliseres til små bogstaver og skal være globalt unikke. Fjern `INITIAL_ADMIN_PASSWORD` og de øvrige `INITIAL_ADMIN_*`-værdier fra `.env`, når oprettelsen er gennemført.
 
-Brugerens dokument indeholder `firstName`, `lastName`, `userName`, `passwordHash`, `role` og `associationId`. De interne roller er `associationAdmin`, `propManager` og `searchUser`. De aftalte rettigheder er defineret i `backend/user.js`; login-endpoints og beskyttelse af API-routes er næste trin.
+Brugerens dokument indeholder `firstName`, `lastName`, `userName`, `passwordHash`, `role` og `associationId`. De interne roller er `associationAdmin`, `propManager` og `searchUser`. Rolle-rettighederne er defineret i `backend/src/models/user.model.ts`; login-endpoints og beskyttelse af API-routes er næste trin.
+
+## Backend med TypeScript
+
+Backendens TypeScript-kildekode ligger i `backend/src/` og er opdelt i `config`, `controllers`, `models`, `repositories`, `routes`, `services` og `scripts`. Start udviklingsserveren med `npm --prefix backend run start-dev`, byg med `npm --prefix backend run build`, og kør tests med `npm --prefix backend test`.
