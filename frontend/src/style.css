@@ -1,0 +1,20 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: Arial, Helvetica, sans-serif;
+  --color-brand: #990303;
+  --color-gray-light: #9c9999;
+  --color-gray-medium: #71706e;
+  --color-gray-dark: #292323;
+}
+
+@layer base {
+  html {
+    min-width: 320px;
+    background: #ffffff;
+  }
+
+  body {
+    min-height: 100vh;
+  }
+}
