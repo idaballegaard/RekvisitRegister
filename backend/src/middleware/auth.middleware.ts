@@ -5,6 +5,8 @@ import {
   verifyAccessToken,
   type AuthenticatedUser,
 } from '../services/access-token.service.ts'
+import { hasPermission } from '../services/user.service.ts'
+import type { Permission } from '../models/user.model.ts'
 
 declare global {
   namespace Express {
@@ -33,6 +35,23 @@ export const requireAuthentication: RequestHandler = async (request, response, n
       return
     }
     response.status(401).json({ error: 'Login er ugyldigt eller udløbet' })
+  }
+}
+
+export function requirePermission(permission: Permission): RequestHandler {
+  return (request, response, next) => {
+    const user = request.authenticatedUser
+    if (!user) {
+      response.status(401).json({ error: 'Login er påkrævet' })
+      return
+    }
+
+    if (!hasPermission(user.role, permission)) {
+      response.status(403).json({ error: 'Du har ikke adgang til denne handling' })
+      return
+    }
+
+    next()
   }
 }
 

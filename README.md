@@ -39,7 +39,20 @@ Content-Type: application/json
 {"userName":"admin","password":"din-adgangskode"}
 ```
 
-Et vellykket svar indeholder et bearer-token, der udløber efter 15 minutter, og brugerens ikke-følsomme profil. Login er begrænset til 10 forsøg pr. IP-adresse pr. 15 minutter. Send tokenet i `Authorization: Bearer <token>`-headeren til `GET /auth/me` for at hente den autentificerede profil. Endpoints, der skal kræve login, skal beskyttes med autentificeringsmiddleware; dette trin beskytter `/auth/me`.
+Et vellykket svar indeholder et bearer-token, der udløber efter 15 minutter, og brugerens ikke-følsomme profil. Login er begrænset til 10 forsøg pr. IP-adresse pr. 15 minutter. Send tokenet i `Authorization: Bearer <token>`-headeren til `GET /auth/me` for at hente den autentificerede profil.
+
+Beskyttede API-ruter skal bruge `requireAuthentication`. Ruter, der kræver en bestemt rettighed, skal også bruge `requirePermission` fra `backend/src/middleware/auth.middleware.ts`, for eksempel:
+
+```ts
+router.post(
+  '/props',
+  requireAuthentication,
+  requirePermission(PERMISSIONS.MANAGE_PROPS),
+  createProp,
+)
+```
+
+Middleware svarer med `401` uden gyldigt login og `403`, hvis brugerens rolle mangler rettigheden. Projektet har endnu ingen rekvisit- eller andre forretningsruter; de skal tilføjes og beskyttes, når funktionerne implementeres.
 
 ## Backend med TypeScript
 
