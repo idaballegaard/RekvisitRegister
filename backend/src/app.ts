@@ -1,7 +1,9 @@
 import 'dotenv/config'
 import express from 'express'
 import { closeDatabase, connectToDatabase } from './config/database.ts'
+import authRouter from './routes/auth.routes.ts'
 import healthRouter from './routes/health.routes.ts'
+import { getAccessTokenKey } from './services/access-token.service.ts'
 
 const app = express()
 const port = Number(process.env.PORT) || 3000
@@ -11,8 +13,10 @@ app.get('/', (_request, response) => {
   response.send('Hej fra Express!')
 })
 app.use(healthRouter)
+app.use(authRouter)
 
 async function startServer(): Promise<void> {
+  getAccessTokenKey()
   await connectToDatabase()
 
   app.listen(port, () => {

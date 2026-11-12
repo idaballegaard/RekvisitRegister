@@ -26,7 +26,20 @@ INITIAL_ADMIN_PASSWORD=brug-en-unik-adgangssætning-på-mindst-12-tegn
 
 Kør derefter `npm --prefix backend run bootstrap:admin` én gang. Scriptet opretter foreningen og den første bruger i en transaktion. Det stopper, hvis databasen allerede indeholder en forening eller en bruger. Adgangskoden gemmes som bcrypt-hash; brugernavne normaliseres til små bogstaver og skal være globalt unikke. Fjern `INITIAL_ADMIN_PASSWORD` og de øvrige `INITIAL_ADMIN_*`-værdier fra `.env`, når oprettelsen er gennemført.
 
-Brugerens dokument indeholder `firstName`, `lastName`, `userName`, `passwordHash`, `role` og `associationId`. De interne roller er `associationAdmin`, `propManager` og `searchUser`. Rolle-rettighederne er defineret i `backend/src/models/user.model.ts`; login-endpoints og beskyttelse af API-routes er næste trin.
+Brugerens dokument indeholder `firstName`, `lastName`, `userName`, `passwordHash`, `role` og `associationId`. Adgangskoden skal være gemt som bcrypt-hash; en adgangskode indsat som almindelig tekst kan ikke bruges til login. De interne roller er `associationAdmin`, `propManager` og `searchUser`. Rolle-rettighederne er defineret i `backend/src/models/user.model.ts`.
+
+## Login
+
+Sæt `AUTH_TOKEN_SECRET` i `backend/.env` til en tilfældig hemmelighed på mindst 32 bytes. Du kan generere en med `openssl rand -base64 32`. Hold værdien hemmelig, og skift den ikke, mens aktive tokens stadig skal virke. Login-endpointet accepterer JSON med `userName` og `password`:
+
+```http
+POST /auth/login
+Content-Type: application/json
+
+{"userName":"admin","password":"din-adgangskode"}
+```
+
+Et vellykket svar indeholder et bearer-token, der udløber efter 15 minutter, og brugerens ikke-følsomme profil. Login er begrænset til 10 forsøg pr. IP-adresse pr. 15 minutter. Send tokenet i `Authorization: Bearer <token>`-headeren til `GET /auth/me` for at hente den autentificerede profil. Endpoints, der skal kræve login, skal beskyttes med autentificeringsmiddleware; dette trin beskytter `/auth/me`.
 
 ## Backend med TypeScript
 
