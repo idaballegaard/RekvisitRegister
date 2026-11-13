@@ -1,8 +1,30 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { login } from '../services/auth.service'
 
 const passwordVisible = ref(false)
-const loginNoticeVisible = ref(false)
+const userName = ref('')
+const password = ref('')
+const isSubmitting = ref(false)
+const errorMessage = ref('')
+const loggedInUser = ref('')
+
+async function submitLogin(): Promise<void> {
+  isSubmitting.value = true
+  errorMessage.value = ''
+
+  try {
+    const result = await login({ userName: userName.value, password: password.value })
+    loggedInUser.value = result.user.userName
+    password.value = ''
+  } catch (error) {
+    errorMessage.value = error instanceof Error
+      ? error.message
+      : 'Login kunne ikke gennemføres.'
+  } finally {
+    isSubmitting.value = false
+  }
+}
 </script>
 
 <template>
@@ -40,14 +62,15 @@ const loginNoticeVisible = ref(false)
           Log ind for at finde, dele og holde styr på rekvisitter.
         </p>
 
-        <form class="flex flex-col" @submit.prevent="loginNoticeVisible = true">
-          <label for="email" class="mb-[9px] text-[13px] font-bold">E-mail</label>
+        <form v-if="!loggedInUser" class="flex flex-col" @submit.prevent="submitLogin">
+          <label for="userName" class="mb-[9px] text-[13px] font-bold">Brugernavn</label>
           <input
-            id="email"
-            name="email"
-            type="email"
+            id="userName"
+            name="userName"
+            type="text"
             autocomplete="username"
-            placeholder="navn@eksempel.dk"
+            placeholder="Dit brugernavn"
+            v-model="userName"
             required
             class="mb-[17px] h-[35px] w-full rounded-[5px] border border-gray-light bg-white px-[10px] text-[13px] text-gray-dark focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-brand"
           />
@@ -59,6 +82,7 @@ const loginNoticeVisible = ref(false)
               name="password"
               :type="passwordVisible ? 'text' : 'password'"
               autocomplete="current-password"
+              v-model="password"
               required
               class="h-[35px] w-full rounded-[5px] border border-gray-light bg-white py-0 pr-12 pl-[10px] text-[13px] text-gray-dark focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-brand"
             />
@@ -81,14 +105,19 @@ const loginNoticeVisible = ref(false)
           <button
             class="flex h-[35px] cursor-pointer items-center justify-center gap-4 rounded-[5px] border-0 bg-brand text-sm font-bold text-white hover:bg-[#7d0202] focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-brand"
             type="submit"
+            :disabled="isSubmitting"
+            :aria-busy="isSubmitting"
           >
-            <span>Log ind</span>
+            <span>{{ isSubmitting ? 'Logger ind…' : 'Log ind' }}</span>
             <span aria-hidden="true">→</span>
           </button>
-          <p v-if="loginNoticeVisible" class="mt-[9px] text-xs text-brand" role="status">
-            Login er endnu ikke tilsluttet.
+          <p v-if="errorMessage" class="mt-[9px] text-xs text-brand" role="alert">
+            {{ errorMessage }}
           </p>
         </form>
+        <p v-else class="mt-4 text-sm text-gray-medium" role="status">
+          Du er logget ind som <strong>{{ loggedInUser }}</strong>.
+        </p>
 
         <div class="mt-[15px] border-t border-[#d8d6d6] pt-[14px]">
           <h2 class="text-sm leading-[1.3] font-bold">Har du ikke adgang?</h2>
