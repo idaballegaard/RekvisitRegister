@@ -34,6 +34,7 @@ export interface UserDocument {
   firstName: string
   lastName: string
   userName: string
+  email: string
   passwordHash: string
   role: UserRole
   associationId: ObjectId
@@ -46,6 +47,7 @@ export interface InitialAdminInput {
   firstName: unknown
   lastName: unknown
   userName: unknown
+  email: unknown
   password: unknown
 }
 
@@ -54,5 +56,6 @@ export interface ValidatedInitialAdminInput {
   firstName: string
   lastName: string
   userName: string
+  email: string
   password: string
 }

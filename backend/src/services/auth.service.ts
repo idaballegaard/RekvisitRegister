@@ -4,8 +4,15 @@ import {
   findUserById,
   findUserByUserName,
   updateUserPasswordHash,
+  updateUserProfile,
 } from '../repositories/user.repository.ts'
-import { hashPassword, normalizeUserName, verifyPassword } from './user.service.ts'
+import {
+  hashPassword,
+  isValidEmail,
+  normalizeEmail,
+  normalizeUserName,
+  verifyPassword,
+} from './user.service.ts'
 import { createAccessToken, type AuthenticatedUser } from './access-token.service.ts'
 
 export interface LoginInput {
@@ -18,10 +25,16 @@ export class InvalidPasswordChangeInputError extends Error {}
 export class PasswordChangeUserNotFoundError extends Error {}
 export class IncorrectCurrentPasswordError extends Error {}
 export class PasswordChangeConflictError extends Error {}
+export class InvalidProfileInputError extends Error {}
+export class ProfileUserNotFoundError extends Error {}
 
 export interface ChangePasswordInput {
   currentPassword: string
   newPassword: string
+}
+
+export interface UpdateProfileInput {
+  email: string
 }
 
 export function validateLoginInput(input: unknown): LoginInput {
@@ -121,6 +134,38 @@ export async function changePassword(
   )
   if (!updated) {
     throw new PasswordChangeConflictError()
+  }
+}
+
+export function validateUpdateProfileInput(input: unknown): UpdateProfileInput {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    throw new InvalidProfileInputError('Profiloplysningerne er ugyldige')
+  }
+
+  const { email } = input as Record<string, unknown>
+  if (typeof email !== 'string' || !email.trim()) {
+    throw new InvalidProfileInputError('E-mail skal udfyldes')
+  }
+
+  const normalizedEmail = normalizeEmail(email)
+  if (!isValidEmail(normalizedEmail)) {
+    throw new InvalidProfileInputError('Indtast en gyldig e-mailadresse')
+  }
+
+  return { email: normalizedEmail }
+}
+
+export async function updateProfile(
+  userId: string,
+  input: UpdateProfileInput,
+): Promise<void> {
+  if (!/^[a-f\d]{24}$/i.test(userId)) {
+    throw new ProfileUserNotFoundError()
+  }
+
+  const updated = await updateUserProfile(new ObjectId(userId), input)
+  if (!updated) {
+    throw new ProfileUserNotFoundError()
   }
 }
 

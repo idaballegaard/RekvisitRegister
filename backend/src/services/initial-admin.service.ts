@@ -32,6 +32,7 @@ export async function createInitialAdmin(input: InitialAdminInput): Promise<{
       firstName: validatedInput.firstName,
       lastName: validatedInput.lastName,
       userName: validatedInput.userName,
+      email: validatedInput.email,
       passwordHash,
       role: ROLES.ASSOCIATION_ADMIN,
       associationId,

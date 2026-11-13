@@ -99,6 +99,32 @@ export const openApiDocument = {
         },
       },
     },
+    '/auth/profile': {
+      patch: {
+        summary: 'Opdatér e-mailadressen for den indloggede bruger',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['email'],
+                properties: {
+                  email: { type: 'string', format: 'email', maxLength: 254 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'E-mailadressen blev opdateret.' },
+          '400': { description: 'E-mail mangler eller er ugyldig.' },
+          '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
+          '404': { description: 'Brugeren findes ikke længere.' },
+        },
+      },
+    },
     '/auth/password': {
       patch: {
         summary: 'Skift adgangskode for den indloggede bruger',
@@ -148,6 +174,7 @@ export const openApiDocument = {
           'firstName',
           'lastName',
           'userName',
+          'email',
           'role',
           'associationId',
           'associationName',
@@ -157,6 +184,7 @@ export const openApiDocument = {
           firstName: { type: 'string', example: 'Ada' },
           lastName: { type: 'string', example: 'Lovelace' },
           userName: { type: 'string', example: 'ada.l' },
+          email: { type: 'string', format: 'email', example: 'ada@example.dk' },
           role: {
             type: 'string',
             enum: ['associationAdmin', 'propManager', 'searchUser'],

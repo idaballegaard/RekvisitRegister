@@ -30,3 +30,15 @@ export async function updateUserPasswordHash(
 
   return result.modifiedCount === 1
 }
+
+export async function updateUserProfile(
+  userId: ObjectId,
+  profile: Pick<UserDocument, 'email'>,
+): Promise<boolean> {
+  const result = await getDatabase().collection<UserDocument>('users').updateOne(
+    { _id: userId },
+    { $set: { email: profile.email, updatedAt: new Date() } },
+  )
+
+  return result.matchedCount === 1
+}

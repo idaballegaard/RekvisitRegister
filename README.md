@@ -21,12 +21,13 @@ INITIAL_ASSOCIATION_NAME=Esbjerg Amatørteater Råd
 INITIAL_ADMIN_FIRST_NAME=Fornavn
 INITIAL_ADMIN_LAST_NAME=Efternavn
 INITIAL_ADMIN_USERNAME=admin
+INITIAL_ADMIN_EMAIL=admin@example.dk
 INITIAL_ADMIN_PASSWORD=brug-en-unik-adgangssætning-på-mindst-12-tegn
 ```
 
-Kør derefter `npm --prefix backend run bootstrap:admin` én gang. Scriptet opretter foreningen og den første bruger i en transaktion. Det stopper, hvis databasen allerede indeholder en forening eller en bruger. Adgangskoden gemmes som bcrypt-hash; brugernavne normaliseres til små bogstaver og skal være globalt unikke. Fjern `INITIAL_ADMIN_PASSWORD` og de øvrige `INITIAL_ADMIN_*`-værdier fra `.env`, når oprettelsen er gennemført.
+Kør derefter `npm --prefix backend run bootstrap:admin` én gang. Scriptet opretter foreningen og den første bruger i en transaktion. Det stopper, hvis databasen allerede indeholder en forening eller en bruger. E-mail er påkrævet, trimmes og gemmes med små bogstaver. Adgangskoden gemmes som bcrypt-hash; brugernavne normaliseres til små bogstaver og skal være globalt unikke. Fjern `INITIAL_ADMIN_PASSWORD` og de øvrige `INITIAL_ADMIN_*`-værdier fra `.env`, når oprettelsen er gennemført.
 
-Brugerens dokument indeholder `firstName`, `lastName`, `userName`, `passwordHash`, `role` og `associationId`. Adgangskoden skal være gemt som bcrypt-hash; en adgangskode indsat som almindelig tekst kan ikke bruges til login. De interne roller er `associationAdmin`, `propManager` og `searchUser`. Rolle-rettighederne er defineret i `backend/src/models/user.model.ts`.
+Brugerens dokument indeholder `firstName`, `lastName`, `userName`, `email`, `passwordHash`, `role` og `associationId`. E-mail kan ses og opdateres på profilsiden. Adgangskoden skal være gemt som bcrypt-hash; en adgangskode indsat som almindelig tekst kan ikke bruges til login. De interne roller er `associationAdmin`, `propManager` og `searchUser`. Rolle-rettighederne er defineret i `backend/src/models/user.model.ts`.
 
 ## Login
 

@@ -30,11 +30,16 @@ export function validateInitialAdminInput(input: InitialAdminInput): ValidatedIn
   const firstName = requireString(input, 'firstName')
   const lastName = requireString(input, 'lastName')
   const userNameInput = requireString(input, 'userName')
+  const email = normalizeEmail(requireString(input, 'email'))
   const password = requireString(input, 'password')
 
   const userName = normalizeUserName(userNameInput)
   if (!/^[a-z0-9._-]{3,32}$/.test(userName)) {
     throw new Error('userName skal være 3-32 tegn: bogstaver, tal, punktum, _ eller -')
+  }
+
+  if (!isValidEmail(email)) {
+    throw new Error('email skal være en gyldig e-mailadresse')
   }
 
   const passwordBytes = Buffer.byteLength(password, 'utf8')
@@ -47,8 +52,18 @@ export function validateInitialAdminInput(input: InitialAdminInput): ValidatedIn
     firstName: firstName.trim(),
     lastName: lastName.trim(),
     userName,
+    email,
     password,
   }
+}
+
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase()
+}
+
+export function isValidEmail(email: string): boolean {
+  return email.length <= 254
+    && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
 
 export function hashPassword(password: string): Promise<string> {

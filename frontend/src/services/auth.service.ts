@@ -8,6 +8,7 @@ export interface AuthenticatedUser {
 }
 
 export interface CurrentUserProfile extends AuthenticatedUser {
+  email: string
   associationName: string
 }
 
@@ -49,6 +50,8 @@ function isAuthenticatedUser(value: unknown): value is AuthenticatedUser {
 
 function isCurrentUserProfile(value: unknown): value is CurrentUserProfile {
   return isAuthenticatedUser(value)
+    && 'email' in value
+    && typeof value.email === 'string'
     && 'associationName' in value
     && typeof value.associationName === 'string'
 }
@@ -213,6 +216,60 @@ export async function changePassword(credentials: ChangePasswordCredentials): Pr
       throw new Error(body.error)
     }
     throw new Error(`Adgangskoden kunne ikke opdateres (HTTP ${response.status}).`)
+  }
+
+  if (
+    typeof body !== 'object'
+    || body === null
+    || !('message' in body)
+    || typeof body.message !== 'string'
+  ) {
+    throw new Error('Serveren returnerede et ugyldigt svar.')
+  }
+}
+
+export async function updateProfile(email: string): Promise<void> {
+  const accessToken = sessionStorage.getItem(ACCESS_TOKEN_KEY)
+  if (!accessToken) {
+    throw new UnauthorizedError('Du er ikke logget ind.')
+  }
+
+  let response: Response
+  try {
+    response = await fetch('/api/auth/profile', {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email }),
+    })
+  } catch {
+    throw new Error('Kunne ikke kontakte serveren. Kontrollér, at backend kører.')
+  }
+
+  let body: unknown
+  try {
+    body = await response.json()
+  } catch {
+    throw new Error('Serveren returnerede et ugyldigt svar.')
+  }
+
+  if (response.status === 401) {
+    clearAuthSession()
+    throw new UnauthorizedError('Dit login er udløbet. Log ind igen.')
+  }
+
+  if (!response.ok) {
+    if (
+      typeof body === 'object'
+      && body !== null
+      && 'error' in body
+      && typeof body.error === 'string'
+    ) {
+      throw new Error(body.error)
+    }
+    throw new Error(`E-mailadressen kunne ikke opdateres (HTTP ${response.status}).`)
   }
 
   if (

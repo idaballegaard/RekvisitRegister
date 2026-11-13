@@ -18,6 +18,7 @@ const currentUserResponse = {
     firstName: 'Ada',
     lastName: 'Lovelace',
     userName: 'ada.l',
+    email: 'ada@example.dk',
     role: 'associationAdmin',
     associationId: 'fedcba9876543210fedcba98',
     associationName: 'Skarntyden',
@@ -126,12 +127,46 @@ describe('ProfileView', () => {
     expect(wrapper.text()).toContain('Skarntyden')
     expect(wrapper.text()).toContain('Foreningsansvarlig')
     expect(wrapper.get('input[name="email"]').attributes('type')).toBe('email')
-    expect(wrapper.get('input[name="email"]').attributes('placeholder')).toBe('Ikke angivet')
+    expect(wrapper.get('input[name="email"]').element).toHaveProperty('value', 'ada@example.dk')
     expect(wrapper.findAll('input[autocomplete="new-password"]')).toHaveLength(2)
     expect(wrapper.text()).toContain('Log ud')
     expect(fetchMock).toHaveBeenCalledWith('/api/auth/me', {
       headers: { Authorization: 'Bearer current-test-token' },
     })
+  })
+
+  it('updates and saves the email address', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(currentUserResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({ message: 'E-mailadressen er opdateret.' }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(ProfileView)
+
+    await vi.waitFor(() => {
+      expect(wrapper.get('input[name="email"]').element).toHaveProperty('value', 'ada@example.dk')
+    })
+    await wrapper.get('input[name="email"]').setValue('new@example.dk')
+    await wrapper.get('section[aria-labelledby="personal-heading"] form').trigger('submit')
+
+    await vi.waitFor(() => {
+      expect(wrapper.get('[role="status"]').text()).toContain('E-mailadressen er opdateret.')
+    })
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/auth/profile', {
+      method: 'PATCH',
+      headers: {
+        Authorization: 'Bearer current-test-token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email: 'new@example.dk' }),
+    })
+    expect(wrapper.get('input[name="email"]').element).toHaveProperty('value', 'new@example.dk')
   })
 
   it('toggles visibility for the current password', async () => {

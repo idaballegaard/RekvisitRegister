@@ -12,6 +12,7 @@ import authRouter from '../routes/auth.routes.ts'
 import { hashPassword } from './user.service.ts'
 
 const testPassword = 'integration-test-passphrase'
+const testEmail = 'integration@example.dk'
 const testSigningSecret = 'integration-test-signing-secret-with-32-bytes'
 const testAssociationName = 'Integration Theatre'
 const environmentKeys = ['MONGODB_URI', 'MONGODB_DB_NAME', 'AUTH_TOKEN_SECRET'] as const
@@ -24,6 +25,7 @@ let httpServer: Server | undefined
 let baseUrl: string
 let expectedAssociationId: ObjectId
 let expectedUserId: string
+let authenticatedAccessToken: string
 
 describe('auth endpoints with MongoDB', () => {
   before(async () => {
@@ -47,6 +49,7 @@ describe('auth endpoints with MongoDB', () => {
       firstName: 'Integration',
       lastName: 'Tester',
       userName: 'integration.test',
+      email: testEmail,
       passwordHash: await hashPassword(testPassword),
       role: ROLES.ASSOCIATION_ADMIN,
       associationId: expectedAssociationId,
@@ -103,6 +106,7 @@ describe('auth endpoints with MongoDB', () => {
     assert.equal(body.tokenType, 'Bearer')
     assert.equal(body.expiresIn, 900)
     assert.ok(body.accessToken)
+    authenticatedAccessToken = body.accessToken
     assert.deepEqual(body.user, {
       userId: expectedUserId,
       firstName: 'Integration',
@@ -169,8 +173,43 @@ describe('auth endpoints with MongoDB', () => {
 
     assert.equal(authenticatedResponse.status, 200)
     assert.deepEqual(await authenticatedResponse.json(), {
-      user: { ...loginBody.user as object, associationName: testAssociationName },
+      user: {
+        ...loginBody.user as object,
+        email: testEmail,
+        associationName: testAssociationName,
+      },
     })
+  })
+
+  test('updates the authenticated user email and rejects invalid addresses', async () => {
+    const invalidResponse = await fetch(`${baseUrl}/auth/profile`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${authenticatedAccessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email: 'not-an-email' }),
+    })
+    assert.equal(invalidResponse.status, 400)
+
+    const updateResponse = await fetch(`${baseUrl}/auth/profile`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${authenticatedAccessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email: '  NEW.EMAIL@EXAMPLE.DK  ' }),
+    })
+    assert.equal(updateResponse.status, 200)
+    assert.deepEqual(await updateResponse.json(), {
+      message: 'E-mailadressen er opdateret.',
+    })
+
+    const profileResponse = await fetch(`${baseUrl}/auth/me`, {
+      headers: { Authorization: `Bearer ${authenticatedAccessToken}` },
+    })
+    const profileBody = await profileResponse.json() as { user: { email: string } }
+    assert.equal(profileBody.user.email, 'new.email@example.dk')
   })
 
   test('requires authentication to change a password', async () => {
@@ -187,17 +226,10 @@ describe('auth endpoints with MongoDB', () => {
   })
 
   test('rejects invalid password-change input', async () => {
-    const loginResponse = await fetch(`${baseUrl}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userName: 'integration.test', password: testPassword }),
-    })
-    const { accessToken } = await loginResponse.json() as { accessToken: string }
-
     const response = await fetch(`${baseUrl}/auth/password`, {
       method: 'PATCH',
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${authenticatedAccessToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -213,17 +245,10 @@ describe('auth endpoints with MongoDB', () => {
   })
 
   test('rejects an incorrect current password', async () => {
-    const loginResponse = await fetch(`${baseUrl}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userName: 'integration.test', password: testPassword }),
-    })
-    const { accessToken } = await loginResponse.json() as { accessToken: string }
-
     const response = await fetch(`${baseUrl}/auth/password`, {
       method: 'PATCH',
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${authenticatedAccessToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -239,17 +264,10 @@ describe('auth endpoints with MongoDB', () => {
   })
 
   test('changes the password and allows login only with the new password', async () => {
-    const loginResponse = await fetch(`${baseUrl}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userName: 'integration.test', password: testPassword }),
-    })
-    const { accessToken } = await loginResponse.json() as { accessToken: string }
-
     const changeResponse = await fetch(`${baseUrl}/auth/password`, {
       method: 'PATCH',
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${authenticatedAccessToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({

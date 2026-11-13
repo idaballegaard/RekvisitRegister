@@ -6,10 +6,12 @@ import {
   clearAuthSession,
   getCurrentUser,
   UnauthorizedError,
+  updateProfile,
   type CurrentUserProfile,
 } from '../services/auth.service'
 
 const router = useRouter()
+const email = ref('')
 const currentPassword = ref('')
 const newPassword = ref('')
 const repeatedPassword = ref('')
@@ -18,8 +20,11 @@ const newPasswordVisible = ref(false)
 const repeatedPasswordVisible = ref(false)
 const profile = ref<CurrentUserProfile | null>(null)
 const isLoading = ref(true)
+const isSavingProfile = ref(false)
 const isChangingPassword = ref(false)
 const errorMessage = ref('')
+const profileErrorMessage = ref('')
+const profileSuccessMessage = ref('')
 const passwordErrorMessage = ref('')
 const passwordSuccessMessage = ref('')
 const roleNames: Record<CurrentUserProfile['role'], string> = {
@@ -31,6 +36,29 @@ const roleNames: Record<CurrentUserProfile['role'], string> = {
 async function logout(): Promise<void> {
   clearAuthSession()
   await router.replace({ name: 'login' })
+}
+
+async function submitProfileUpdate(): Promise<void> {
+  profileErrorMessage.value = ''
+  profileSuccessMessage.value = ''
+  isSavingProfile.value = true
+  try {
+    await updateProfile(email.value)
+    if (profile.value) {
+      profile.value.email = email.value.trim().toLowerCase()
+    }
+    profileSuccessMessage.value = 'E-mailadressen er opdateret.'
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      await router.replace({ name: 'login' })
+      return
+    }
+    profileErrorMessage.value = error instanceof Error
+      ? error.message
+      : 'E-mailadressen kunne ikke opdateres.'
+  } finally {
+    isSavingProfile.value = false
+  }
 }
 
 async function submitPasswordChange(): Promise<void> {
@@ -68,6 +96,7 @@ async function submitPasswordChange(): Promise<void> {
 onMounted(async () => {
   try {
     profile.value = await getCurrentUser()
+    email.value = profile.value.email
   } catch (error) {
     if (error instanceof UnauthorizedError) {
       await router.replace({ name: 'login' })
@@ -122,7 +151,7 @@ onMounted(async () => {
           <h2 id="personal-heading" class="mb-[17px] text-sm font-bold text-brand">
             Personlige oplysninger
           </h2>
-          <form class="flex flex-col">
+          <form class="flex flex-col" @submit.prevent="submitProfileUpdate">
             <label for="profile-name" class="mb-[7px] text-xs">Navn</label>
             <input
               id="profile-name"
@@ -130,6 +159,7 @@ onMounted(async () => {
               type="text"
               :value="`${profile.firstName} ${profile.lastName}`"
               autocomplete="name"
+              readonly
               class="mb-[14px] h-[35px] w-full rounded-[4px] border border-gray-light bg-white px-[9px] text-xs text-gray-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             />
 
@@ -138,19 +168,23 @@ onMounted(async () => {
               id="profile-email"
               name="email"
               type="email"
-              placeholder="Ikke angivet"
+              v-model.trim="email"
               autocomplete="email"
-              readonly
+              required
               class="h-[35px] w-full rounded-[4px] border border-gray-light bg-white px-[9px] text-xs text-gray-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             />
-            <p class="mt-[7px] text-[11px] text-gray-medium">
-              E-mail er ikke registreret på kontoen endnu.
+            <p v-if="profileErrorMessage" class="mt-3 text-xs text-brand" role="alert">
+              {{ profileErrorMessage }}
+            </p>
+            <p v-if="profileSuccessMessage" class="mt-3 text-xs text-green-700" role="status">
+              {{ profileSuccessMessage }}
             </p>
             <button
-              class="mt-[17px] h-[35px] w-fit rounded-[4px] border-0 bg-brand px-[14px] text-xs text-white hover:bg-[#7d0202] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-              type="button"
+              class="mt-[17px] h-[35px] w-fit rounded-[4px] border-0 bg-brand px-[14px] text-xs text-white hover:bg-[#7d0202] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-60"
+              type="submit"
+              :disabled="isSavingProfile"
             >
-              Gem ændringer
+              {{ isSavingProfile ? 'Gemmer…' : 'Gem ændringer' }}
             </button>
           </form>
         </section>
