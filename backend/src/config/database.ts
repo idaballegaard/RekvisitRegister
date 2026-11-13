@@ -1,4 +1,4 @@
-import { MongoClient, type ClientSession, type Db } from 'mongodb'
+import { MongoClient, MongoServerError, type ClientSession, type Db } from 'mongodb'
 
 let client: MongoClient | undefined
 let database: Db | undefined
@@ -24,6 +24,24 @@ export async function connectToDatabase(): Promise<Db> {
 
     const users = database.collection('users')
     await users.createIndex({ userName: 1 }, { unique: true, name: 'unique_user_name' })
+    try {
+      await users.createIndex(
+        { email: 1 },
+        {
+          unique: true,
+          name: 'unique_user_email',
+          collation: { locale: 'en', strength: 2 },
+        },
+      )
+    } catch (error) {
+      if (error instanceof MongoServerError && error.code === 11000) {
+        throw new Error(
+          'Kan ikke oprette det unikke e-mailindeks: der findes allerede brugere med samme e-mailadresse. Ret dubletterne i databasen, og start backend igen.',
+          { cause: error },
+        )
+      }
+      throw error
+    }
     await users.createIndex(
       { associationId: 1, role: 1 },
       { name: 'users_by_association_and_role' },

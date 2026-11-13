@@ -6,6 +6,7 @@ import { ACCESS_TOKEN_TTL_SECONDS } from '../services/access-token.service.ts'
 import { isValidEmail } from '../services/user.service.ts'
 import {
   changePassword,
+  EmailAlreadyInUseError,
   IncorrectCurrentPasswordError,
   InvalidProfileInputError,
   InvalidPasswordChangeInputError,
@@ -107,6 +108,10 @@ export const patchProfile: RequestHandler = async (request, response, next) => {
     await updateProfile(user.userId, input)
     response.json({ message: 'E-mailadressen er opdateret.' })
   } catch (error) {
+    if (error instanceof EmailAlreadyInUseError) {
+      response.status(409).json({ error: 'E-mailadressen er allerede knyttet til en anden bruger.' })
+      return
+    }
     if (error instanceof ProfileUserNotFoundError) {
       response.status(404).json({ error: 'Brugeren blev ikke fundet.' })
       return

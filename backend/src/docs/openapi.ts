@@ -121,6 +121,7 @@ export const openApiDocument = {
           '200': { description: 'E-mailadressen blev opdateret.' },
           '400': { description: 'E-mail mangler eller er ugyldig.' },
           '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
+          '409': { description: 'E-mailadressen er allerede knyttet til en anden bruger.' },
           '404': { description: 'Brugeren findes ikke længere.' },
         },
       },

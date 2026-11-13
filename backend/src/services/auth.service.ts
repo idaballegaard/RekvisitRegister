@@ -1,4 +1,4 @@
-import { ObjectId, type WithId } from 'mongodb'
+import { MongoServerError, ObjectId, type WithId } from 'mongodb'
 import { ROLES, type UserDocument } from '../models/user.model.ts'
 import {
   findUserById,
@@ -27,6 +27,7 @@ export class IncorrectCurrentPasswordError extends Error {}
 export class PasswordChangeConflictError extends Error {}
 export class InvalidProfileInputError extends Error {}
 export class ProfileUserNotFoundError extends Error {}
+export class EmailAlreadyInUseError extends Error {}
 
 export interface ChangePasswordInput {
   currentPassword: string
@@ -163,7 +164,15 @@ export async function updateProfile(
     throw new ProfileUserNotFoundError()
   }
 
-  const updated = await updateUserProfile(new ObjectId(userId), input)
+  let updated: boolean
+  try {
+    updated = await updateUserProfile(new ObjectId(userId), input)
+  } catch (error) {
+    if (error instanceof MongoServerError && error.code === 11000) {
+      throw new EmailAlreadyInUseError()
+    }
+    throw error
+  }
   if (!updated) {
     throw new ProfileUserNotFoundError()
   }

@@ -25,6 +25,7 @@ let httpServer: Server | undefined
 let baseUrl: string
 let expectedAssociationId: ObjectId
 let expectedUserId: string
+let reservedEmailUserId: ObjectId
 let authenticatedAccessToken: string
 
 describe('auth endpoints with MongoDB', () => {
@@ -58,6 +59,20 @@ describe('auth endpoints with MongoDB', () => {
     }
     const insertResult = await getDatabase().collection<UserDocument>('users').insertOne(user)
     expectedUserId = insertResult.insertedId.toHexString()
+    const reservedEmailUser: UserDocument = {
+      firstName: 'Reserved',
+      lastName: user.lastName,
+      userName: 'reserved.email',
+      email: 'reserved@example.dk',
+      passwordHash: user.passwordHash,
+      role: user.role,
+      associationId: expectedAssociationId,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    }
+    const reservedUserResult = await getDatabase().collection<UserDocument>('users')
+      .insertOne(reservedEmailUser)
+    reservedEmailUserId = reservedUserResult.insertedId
 
     const app = express()
     app.use(express.json())
@@ -192,6 +207,19 @@ describe('auth endpoints with MongoDB', () => {
     })
     assert.equal(invalidResponse.status, 400)
 
+    const duplicateResponse = await fetch(`${baseUrl}/auth/profile`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${authenticatedAccessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email: 'RESERVED@example.dk' }),
+    })
+    assert.equal(duplicateResponse.status, 409)
+    assert.deepEqual(await duplicateResponse.json(), {
+      error: 'E-mailadressen er allerede knyttet til en anden bruger.',
+    })
+
     const updateResponse = await fetch(`${baseUrl}/auth/profile`, {
       method: 'PATCH',
       headers: {
@@ -210,6 +238,9 @@ describe('auth endpoints with MongoDB', () => {
     })
     const profileBody = await profileResponse.json() as { user: { email: string } }
     assert.equal(profileBody.user.email, 'new.email@example.dk')
+    const reservedUser = await getDatabase().collection<UserDocument>('users')
+      .findOne({ _id: reservedEmailUserId })
+    assert.equal(reservedUser?.email, 'reserved@example.dk')
   })
 
   test('requires authentication to change a password', async () => {
