@@ -1,5 +1,5 @@
-import { ObjectId } from 'mongodb'
-import { ROLES } from '../models/user.model.ts'
+import { ObjectId, type WithId } from 'mongodb'
+import { ROLES, type UserDocument } from '../models/user.model.ts'
 import { findUserByUserName } from '../repositories/user.repository.ts'
 import { normalizeUserName, verifyPassword } from './user.service.ts'
 import { createAccessToken, type AuthenticatedUser } from './access-token.service.ts'
@@ -43,6 +43,17 @@ export async function login(input: LoginInput): Promise<{
   user: AuthenticatedUser
 } | null> {
   const user = await findUserByUserName(input.userName)
+  return authenticateUser(input, user)
+}
+
+export async function authenticateUser(
+  input: LoginInput,
+  user: WithId<UserDocument> | null,
+  tokenKey?: Uint8Array,
+): Promise<{
+  accessToken: string
+  user: AuthenticatedUser
+} | null> {
   if (!user || !await verifyPassword(input.password, user.passwordHash)) {
     return null
   }
@@ -74,7 +85,7 @@ export async function login(input: LoginInput): Promise<{
   }
 
   return {
-    accessToken: await createAccessToken(authenticatedUser),
+    accessToken: await createAccessToken(authenticatedUser, tokenKey),
     user: authenticatedUser,
   }
 }

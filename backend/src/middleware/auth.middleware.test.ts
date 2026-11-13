@@ -5,6 +5,7 @@ import test from 'node:test'
 import { PERMISSIONS, ROLES } from '../models/user.model.ts'
 import { createAccessToken } from '../services/access-token.service.ts'
 import { requireAuthentication, requirePermission } from './auth.middleware.ts'
+import authRouter from '../routes/auth.routes.ts'
 
 const signingKey = new TextEncoder().encode('test-secret-with-at-least-32-bytes')
 const authenticatedUser = {
@@ -29,6 +30,7 @@ test('protects permission routes with authentication and role checks', async (co
 
   const token = await createAccessToken(authenticatedUser, signingKey)
   const app = express()
+  app.use(authRouter)
   app.get(
     '/manage-props',
     requireAuthentication,
@@ -55,6 +57,20 @@ test('protects permission routes with authentication and role checks', async (co
 
   const unauthenticatedResponse = await fetch(`${baseUrl}/manage-props`)
   assert.equal(unauthenticatedResponse.status, 401)
+
+  const missingMeTokenResponse = await fetch(`${baseUrl}/auth/me`)
+  assert.equal(missingMeTokenResponse.status, 401)
+
+  const invalidMeTokenResponse = await fetch(`${baseUrl}/auth/me`, {
+    headers: { Authorization: 'Bearer invalid-token' },
+  })
+  assert.equal(invalidMeTokenResponse.status, 401)
+
+  const authenticatedMeResponse = await fetch(`${baseUrl}/auth/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  assert.equal(authenticatedMeResponse.status, 200)
+  assert.deepEqual(await authenticatedMeResponse.json(), { user: authenticatedUser })
 
   const forbiddenResponse = await fetch(`${baseUrl}/create-users`, {
     headers: { Authorization: `Bearer ${token}` },
