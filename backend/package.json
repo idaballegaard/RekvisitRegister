@@ -2,16 +2,36 @@
   "name": "backend",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "dist/app.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start-dev": "cross-env NODE_ENV=development npx nodemon"
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/app.js",
+    "start-dev": "node --watch src/app.ts",
+    "bootstrap:admin": "node src/scripts/create-initial-admin.ts",
+    "test": "node --test src/**/*.test.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
+  "engines": {
+    "node": "^22.18.0 || >=24.12.0"
+  },
   "dependencies": {
-    "express": "^5.3.0"
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^18.0.10",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.4",
+    "jose": "^6.2.17",
+    "mongodb": "^7.8.0",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "@tsconfig/node24": "^24.0.6",
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.19.2",
+    "@types/swagger-ui-express": "^4.1.8",
+    "mongodb-memory-server": "^11.3.0",
+    "typescript": "~6.0.0"
   }
 }
