@@ -164,4 +164,21 @@ describe('ProfileView', () => {
     })
     expect(sessionStorage.getItem('rekvisit-register.access-token')).toBeNull()
   })
+
+  it('clears the access token and redirects to login on logout', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+      JSON.stringify(currentUserResponse),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    )))
+    const wrapper = mount(ProfileView)
+
+    await vi.waitFor(() => {
+      expect(wrapper.find('button[aria-label="Vis nuværende adgangskode"]').exists()).toBe(true)
+    })
+    await wrapper.get('button[aria-label="Log ud"]').trigger('click')
+
+    expect(sessionStorage.getItem('rekvisit-register.access-token')).toBeNull()
+    expect(routerReplace).toHaveBeenCalledWith({ name: 'login' })
+  })
 })

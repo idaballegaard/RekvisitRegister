@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
+  clearAuthSession,
   getCurrentUser,
   UnauthorizedError,
   type CurrentUserProfile,
@@ -18,6 +19,11 @@ const roleNames: Record<CurrentUserProfile['role'], string> = {
   associationAdmin: 'Foreningsansvarlig',
   propManager: 'Rekvisitansvarlig',
   searchUser: 'Søgebruger',
+}
+
+async function logout(): Promise<void> {
+  clearAuthSession()
+  await router.replace({ name: 'login' })
 }
 
 onMounted(async () => {
@@ -217,6 +223,8 @@ onMounted(async () => {
         <button
           class="flex h-[35px] shrink-0 items-center gap-4 rounded-[4px] border-0 bg-brand px-[14px] text-xs text-white hover:bg-[#7d0202] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
           type="button"
+          aria-label="Log ud"
+          @click="logout"
         >
           Log ud <span aria-hidden="true">→</span>
         </button>
