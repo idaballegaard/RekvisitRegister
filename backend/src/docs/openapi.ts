@@ -99,6 +99,38 @@ export const openApiDocument = {
         },
       },
     },
+    '/auth/password': {
+      patch: {
+        summary: 'Skift adgangskode for den indloggede bruger',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['currentPassword', 'newPassword'],
+                properties: {
+                  currentPassword: { type: 'string', format: 'password' },
+                  newPassword: {
+                    type: 'string',
+                    format: 'password',
+                    description: 'Skal være 12-72 UTF-8 bytes.',
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Adgangskoden blev opdateret.' },
+          '400': { description: 'Felter mangler, ny adgangskode er ugyldig, eller nuværende adgangskode er forkert.' },
+          '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
+          '404': { description: 'Brugeren findes ikke længere.' },
+          '409': { description: 'Adgangskoden blev ændret samtidig.' },
+        },
+      },
+    },
   },
   components: {
     securitySchemes: {

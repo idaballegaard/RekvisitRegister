@@ -151,6 +151,68 @@ describe('ProfileView', () => {
     expect(wrapper.find('button[aria-label="Skjul nuværende adgangskode"]').exists()).toBe(true)
   })
 
+  it('changes the password, clears the fields, and shows confirmation', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(currentUserResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({ message: 'Adgangskoden er opdateret.' }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(ProfileView)
+
+    await vi.waitFor(() => {
+      expect(wrapper.find('input[name="currentPassword"]').exists()).toBe(true)
+    })
+    await wrapper.get('input[name="currentPassword"]').setValue('old-passphrase')
+    await wrapper.get('input[name="newPassword"]').setValue('new-passphrase-123')
+    await wrapper.get('input[name="repeatPassword"]').setValue('new-passphrase-123')
+    await wrapper.get('section[aria-labelledby="password-heading"] form').trigger('submit')
+
+    await vi.waitFor(() => {
+      expect(wrapper.get('[role="status"]').text()).toContain('Adgangskoden er opdateret.')
+    })
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/auth/password', {
+      method: 'PATCH',
+      headers: {
+        Authorization: 'Bearer current-test-token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        currentPassword: 'old-passphrase',
+        newPassword: 'new-passphrase-123',
+      }),
+    })
+    expect(wrapper.get('input[name="currentPassword"]').element).toHaveProperty('value', '')
+    expect(wrapper.get('input[name="newPassword"]').element).toHaveProperty('value', '')
+    expect(wrapper.get('input[name="repeatPassword"]').element).toHaveProperty('value', '')
+  })
+
+  it('rejects mismatched new passwords without calling the backend', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify(currentUserResponse),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(ProfileView)
+
+    await vi.waitFor(() => {
+      expect(wrapper.find('input[name="currentPassword"]').exists()).toBe(true)
+    })
+    await wrapper.get('input[name="currentPassword"]').setValue('old-passphrase')
+    await wrapper.get('input[name="newPassword"]').setValue('new-passphrase-123')
+    await wrapper.get('input[name="repeatPassword"]').setValue('different-passphrase')
+    await wrapper.get('section[aria-labelledby="password-heading"] form').trigger('submit')
+
+    expect(wrapper.get('[role="alert"]').text()).toContain('De nye adgangskoder er ikke ens.')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('clears an invalid session and redirects to login', async () => {
     sessionStorage.setItem('rekvisit-register.access-token', 'expired-token')
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(

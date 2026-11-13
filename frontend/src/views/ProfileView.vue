@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
+  changePassword,
   clearAuthSession,
   getCurrentUser,
   UnauthorizedError,
@@ -9,12 +10,18 @@ import {
 } from '../services/auth.service'
 
 const router = useRouter()
+const currentPassword = ref('')
+const newPassword = ref('')
+const repeatedPassword = ref('')
 const currentPasswordVisible = ref(false)
 const newPasswordVisible = ref(false)
 const repeatedPasswordVisible = ref(false)
 const profile = ref<CurrentUserProfile | null>(null)
 const isLoading = ref(true)
+const isChangingPassword = ref(false)
 const errorMessage = ref('')
+const passwordErrorMessage = ref('')
+const passwordSuccessMessage = ref('')
 const roleNames: Record<CurrentUserProfile['role'], string> = {
   associationAdmin: 'Foreningsansvarlig',
   propManager: 'Rekvisitansvarlig',
@@ -24,6 +31,38 @@ const roleNames: Record<CurrentUserProfile['role'], string> = {
 async function logout(): Promise<void> {
   clearAuthSession()
   await router.replace({ name: 'login' })
+}
+
+async function submitPasswordChange(): Promise<void> {
+  passwordErrorMessage.value = ''
+  passwordSuccessMessage.value = ''
+
+  if (newPassword.value !== repeatedPassword.value) {
+    passwordErrorMessage.value = 'De nye adgangskoder er ikke ens.'
+    return
+  }
+
+  isChangingPassword.value = true
+  try {
+    await changePassword({
+      currentPassword: currentPassword.value,
+      newPassword: newPassword.value,
+    })
+    currentPassword.value = ''
+    newPassword.value = ''
+    repeatedPassword.value = ''
+    passwordSuccessMessage.value = 'Adgangskoden er opdateret.'
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      await router.replace({ name: 'login' })
+      return
+    }
+    passwordErrorMessage.value = error instanceof Error
+      ? error.message
+      : 'Adgangskoden kunne ikke opdateres.'
+  } finally {
+    isChangingPassword.value = false
+  }
 }
 
 onMounted(async () => {
@@ -122,14 +161,16 @@ onMounted(async () => {
           </h2>
           <p class="mb-[17px] text-xs text-gray-medium">Du kan ændre din adgangskode her.</p>
 
-          <form class="flex flex-col">
+          <form class="flex flex-col" @submit.prevent="submitPasswordChange">
             <label for="current-password" class="mb-[7px] text-xs">Nuværende adgangskode</label>
             <div class="relative mb-[14px]">
               <input
                 id="current-password"
                 name="currentPassword"
+                v-model="currentPassword"
                 :type="currentPasswordVisible ? 'text' : 'password'"
                 autocomplete="current-password"
+                required
                 class="h-[35px] w-full rounded-[4px] border border-gray-light bg-white py-0 pr-[52px] pl-[9px] text-xs text-gray-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
               />
               <button
@@ -147,8 +188,10 @@ onMounted(async () => {
               <input
                 id="new-password"
                 name="newPassword"
+                v-model="newPassword"
                 :type="newPasswordVisible ? 'text' : 'password'"
                 autocomplete="new-password"
+                required
                 class="h-[35px] w-full rounded-[4px] border border-gray-light bg-white py-0 pr-[52px] pl-[9px] text-xs text-gray-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
               />
               <button
@@ -166,8 +209,10 @@ onMounted(async () => {
               <input
                 id="repeat-password"
                 name="repeatPassword"
+                v-model="repeatedPassword"
                 :type="repeatedPasswordVisible ? 'text' : 'password'"
                 autocomplete="new-password"
+                required
                 class="h-[35px] w-full rounded-[4px] border border-gray-light bg-white py-0 pr-[52px] pl-[9px] text-xs text-gray-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
               />
               <button
@@ -180,11 +225,18 @@ onMounted(async () => {
               </button>
             </div>
 
+            <p v-if="passwordErrorMessage" class="mt-3 text-xs text-brand" role="alert">
+              {{ passwordErrorMessage }}
+            </p>
+            <p v-if="passwordSuccessMessage" class="mt-3 text-xs text-green-700" role="status">
+              {{ passwordSuccessMessage }}
+            </p>
             <button
-              class="mt-[17px] h-[35px] w-fit rounded-[4px] border-0 bg-brand px-[14px] text-xs text-white hover:bg-[#7d0202] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-              type="button"
+              class="mt-[17px] h-[35px] w-fit rounded-[4px] border-0 bg-brand px-[14px] text-xs text-white hover:bg-[#7d0202] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-60"
+              type="submit"
+              :disabled="isChangingPassword"
             >
-              Opdatér adgangskode
+              {{ isChangingPassword ? 'Opdaterer…' : 'Opdatér adgangskode' }}
             </button>
           </form>
         </section>

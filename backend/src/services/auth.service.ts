@@ -1,7 +1,11 @@
 import { ObjectId, type WithId } from 'mongodb'
 import { ROLES, type UserDocument } from '../models/user.model.ts'
-import { findUserByUserName } from '../repositories/user.repository.ts'
-import { normalizeUserName, verifyPassword } from './user.service.ts'
+import {
+  findUserById,
+  findUserByUserName,
+  updateUserPasswordHash,
+} from '../repositories/user.repository.ts'
+import { hashPassword, normalizeUserName, verifyPassword } from './user.service.ts'
 import { createAccessToken, type AuthenticatedUser } from './access-token.service.ts'
 
 export interface LoginInput {
@@ -10,6 +14,15 @@ export interface LoginInput {
 }
 
 export class InvalidLoginInputError extends Error {}
+export class InvalidPasswordChangeInputError extends Error {}
+export class PasswordChangeUserNotFoundError extends Error {}
+export class IncorrectCurrentPasswordError extends Error {}
+export class PasswordChangeConflictError extends Error {}
+
+export interface ChangePasswordInput {
+  currentPassword: string
+  newPassword: string
+}
 
 export function validateLoginInput(input: unknown): LoginInput {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) {
@@ -44,6 +57,71 @@ export async function login(input: LoginInput): Promise<{
 } | null> {
   const user = await findUserByUserName(input.userName)
   return authenticateUser(input, user)
+}
+
+export function validateChangePasswordInput(input: unknown): ChangePasswordInput {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    throw new InvalidPasswordChangeInputError('Adgangskodefelterne er ugyldige')
+  }
+
+  const { currentPassword, newPassword } = input as Record<string, unknown>
+  if (
+    typeof currentPassword !== 'string'
+    || !currentPassword
+    || typeof newPassword !== 'string'
+    || !newPassword
+  ) {
+    throw new InvalidPasswordChangeInputError(
+      'Nuværende og ny adgangskode skal udfyldes',
+    )
+  }
+
+  const newPasswordBytes = Buffer.byteLength(newPassword, 'utf8')
+  if (newPasswordBytes < 12 || newPasswordBytes > 72) {
+    throw new InvalidPasswordChangeInputError(
+      'Den nye adgangskode skal være mindst 12 og højst 72 bytes',
+    )
+  }
+
+  if (Buffer.byteLength(currentPassword, 'utf8') > 72) {
+    throw new InvalidPasswordChangeInputError('Den nuværende adgangskode er ugyldig')
+  }
+
+  return { currentPassword, newPassword }
+}
+
+export async function changePassword(
+  userId: string,
+  input: ChangePasswordInput,
+): Promise<void> {
+  if (!/^[a-f\d]{24}$/i.test(userId)) {
+    throw new PasswordChangeUserNotFoundError()
+  }
+
+  const user = await findUserById(new ObjectId(userId))
+  if (!user) {
+    throw new PasswordChangeUserNotFoundError()
+  }
+
+  if (!await verifyPassword(input.currentPassword, user.passwordHash)) {
+    throw new IncorrectCurrentPasswordError()
+  }
+
+  if (input.currentPassword === input.newPassword) {
+    throw new InvalidPasswordChangeInputError(
+      'Den nye adgangskode skal være forskellig fra den nuværende',
+    )
+  }
+
+  const newPasswordHash = await hashPassword(input.newPassword)
+  const updated = await updateUserPasswordHash(
+    user._id,
+    user.passwordHash,
+    newPasswordHash,
+  )
+  if (!updated) {
+    throw new PasswordChangeConflictError()
+  }
 }
 
 export async function authenticateUser(

@@ -23,6 +23,11 @@ interface LoginCredentials {
   password: string
 }
 
+interface ChangePasswordCredentials {
+  currentPassword: string
+  newPassword: string
+}
+
 const ACCESS_TOKEN_KEY = 'rekvisit-register.access-token'
 
 export class UnauthorizedError extends Error {}
@@ -164,4 +169,58 @@ export async function getCurrentUser(): Promise<CurrentUserProfile> {
   }
 
   return body.user
+}
+
+export async function changePassword(credentials: ChangePasswordCredentials): Promise<void> {
+  const accessToken = sessionStorage.getItem(ACCESS_TOKEN_KEY)
+  if (!accessToken) {
+    throw new UnauthorizedError('Du er ikke logget ind.')
+  }
+
+  let response: Response
+  try {
+    response = await fetch('/api/auth/password', {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(credentials),
+    })
+  } catch {
+    throw new Error('Kunne ikke kontakte serveren. Kontrollér, at backend kører.')
+  }
+
+  let body: unknown
+  try {
+    body = await response.json()
+  } catch {
+    throw new Error('Serveren returnerede et ugyldigt svar.')
+  }
+
+  if (response.status === 401) {
+    clearAuthSession()
+    throw new UnauthorizedError('Dit login er udløbet. Log ind igen.')
+  }
+
+  if (!response.ok) {
+    if (
+      typeof body === 'object'
+      && body !== null
+      && 'error' in body
+      && typeof body.error === 'string'
+    ) {
+      throw new Error(body.error)
+    }
+    throw new Error(`Adgangskoden kunne ikke opdateres (HTTP ${response.status}).`)
+  }
+
+  if (
+    typeof body !== 'object'
+    || body === null
+    || !('message' in body)
+    || typeof body.message !== 'string'
+  ) {
+    throw new Error('Serveren returnerede et ugyldigt svar.')
+  }
 }

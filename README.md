@@ -56,6 +56,8 @@ router.post(
 
 Middleware svarer med `401` uden gyldigt login og `403`, hvis brugerens rolle mangler rettigheden. Projektet har endnu ingen rekvisit- eller andre forretningsruter; de skal tilføjes og beskyttes, når funktionerne implementeres.
 
+En indlogget bruger kan skifte adgangskode med `PATCH /auth/password`. Kaldet kræver den nuværende adgangskode og en ny adgangskode på 12-72 UTF-8 bytes. JWT-tokenet bliver ikke tilbagekaldt ved skiftet; aktive tokens udløber fortsat efter deres normale 15 minutter.
+
 ## Backend med TypeScript
 
 Backendens TypeScript-kildekode ligger i `backend/src/` og er opdelt i `config`, `controllers`, `models`, `repositories`, `routes`, `services` og `scripts`. Start udviklingsserveren med `npm --prefix backend run start-dev`, byg med `npm --prefix backend run build`, og kør tests med `npm --prefix backend test`. Auth-integrationstestene bruger en isoleret MongoDB Memory Server og forbinder ikke til din konfigurerede database; første testkørsel kan hente en MongoDB-binary.

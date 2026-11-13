@@ -172,4 +172,112 @@ describe('auth endpoints with MongoDB', () => {
       user: { ...loginBody.user as object, associationName: testAssociationName },
     })
   })
+
+  test('requires authentication to change a password', async () => {
+    const response = await fetch(`${baseUrl}/auth/password`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        currentPassword: testPassword,
+        newPassword: 'new-integration-passphrase',
+      }),
+    })
+
+    assert.equal(response.status, 401)
+  })
+
+  test('rejects invalid password-change input', async () => {
+    const loginResponse = await fetch(`${baseUrl}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userName: 'integration.test', password: testPassword }),
+    })
+    const { accessToken } = await loginResponse.json() as { accessToken: string }
+
+    const response = await fetch(`${baseUrl}/auth/password`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        currentPassword: testPassword,
+        newPassword: 'too-short',
+      }),
+    })
+
+    assert.equal(response.status, 400)
+    assert.deepEqual(await response.json(), {
+      error: 'Den nye adgangskode skal være mindst 12 og højst 72 bytes',
+    })
+  })
+
+  test('rejects an incorrect current password', async () => {
+    const loginResponse = await fetch(`${baseUrl}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userName: 'integration.test', password: testPassword }),
+    })
+    const { accessToken } = await loginResponse.json() as { accessToken: string }
+
+    const response = await fetch(`${baseUrl}/auth/password`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        currentPassword: 'incorrect-current-password',
+        newPassword: 'new-integration-passphrase',
+      }),
+    })
+
+    assert.equal(response.status, 400)
+    assert.deepEqual(await response.json(), {
+      error: 'Den nuværende adgangskode er forkert.',
+    })
+  })
+
+  test('changes the password and allows login only with the new password', async () => {
+    const loginResponse = await fetch(`${baseUrl}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userName: 'integration.test', password: testPassword }),
+    })
+    const { accessToken } = await loginResponse.json() as { accessToken: string }
+
+    const changeResponse = await fetch(`${baseUrl}/auth/password`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        currentPassword: testPassword,
+        newPassword: 'new-integration-passphrase',
+      }),
+    })
+
+    assert.equal(changeResponse.status, 200)
+    assert.deepEqual(await changeResponse.json(), {
+      message: 'Adgangskoden er opdateret.',
+    })
+
+    const oldPasswordResponse = await fetch(`${baseUrl}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userName: 'integration.test', password: testPassword }),
+    })
+    assert.equal(oldPasswordResponse.status, 401)
+
+    const newPasswordResponse = await fetch(`${baseUrl}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userName: 'integration.test',
+        password: 'new-integration-passphrase',
+      }),
+    })
+    assert.equal(newPasswordResponse.status, 200)
+  })
 })

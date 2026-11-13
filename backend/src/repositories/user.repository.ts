@@ -1,4 +1,4 @@
-import type { ClientSession, WithId } from 'mongodb'
+import type { ClientSession, ObjectId, WithId } from 'mongodb'
 import { getDatabase } from '../config/database.ts'
 import type { UserDocument } from '../models/user.model.ts'
 
@@ -12,4 +12,21 @@ export async function createUser(user: UserDocument, session: ClientSession): Pr
 
 export async function findUserByUserName(userName: string): Promise<WithId<UserDocument> | null> {
   return getDatabase().collection<UserDocument>('users').findOne({ userName })
+}
+
+export async function findUserById(userId: ObjectId): Promise<WithId<UserDocument> | null> {
+  return getDatabase().collection<UserDocument>('users').findOne({ _id: userId })
+}
+
+export async function updateUserPasswordHash(
+  userId: ObjectId,
+  currentPasswordHash: string,
+  newPasswordHash: string,
+): Promise<boolean> {
+  const result = await getDatabase().collection<UserDocument>('users').updateOne(
+    { _id: userId, passwordHash: currentPasswordHash },
+    { $set: { passwordHash: newPasswordHash, updatedAt: new Date() } },
+  )
+
+  return result.modifiedCount === 1
 }
