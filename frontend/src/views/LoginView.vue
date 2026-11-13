@@ -1,22 +1,23 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { login } from '../services/auth.service'
 
+const router = useRouter()
 const passwordVisible = ref(false)
 const userName = ref('')
 const password = ref('')
 const isSubmitting = ref(false)
 const errorMessage = ref('')
-const loggedInUser = ref('')
 
 async function submitLogin(): Promise<void> {
   isSubmitting.value = true
   errorMessage.value = ''
 
   try {
-    const result = await login({ userName: userName.value, password: password.value })
-    loggedInUser.value = result.user.userName
+    await login({ userName: userName.value, password: password.value })
     password.value = ''
+    await router.push({ name: 'profile' })
   } catch (error) {
     errorMessage.value = error instanceof Error
       ? error.message
@@ -62,7 +63,7 @@ async function submitLogin(): Promise<void> {
           Log ind for at finde, dele og holde styr på rekvisitter.
         </p>
 
-        <form v-if="!loggedInUser" class="flex flex-col" @submit.prevent="submitLogin">
+        <form class="flex flex-col" @submit.prevent="submitLogin">
           <label for="userName" class="mb-[9px] text-[13px] font-bold">Brugernavn</label>
           <input
             id="userName"
@@ -115,9 +116,6 @@ async function submitLogin(): Promise<void> {
             {{ errorMessage }}
           </p>
         </form>
-        <p v-else class="mt-4 text-sm text-gray-medium" role="status">
-          Du er logget ind som <strong>{{ loggedInUser }}</strong>.
-        </p>
 
         <div class="mt-[15px] border-t border-[#d8d6d6] pt-[14px]">
           <h2 class="text-sm leading-[1.3] font-bold">Har du ikke adgang?</h2>

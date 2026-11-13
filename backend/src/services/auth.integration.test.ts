@@ -7,11 +7,13 @@ import type { Server } from 'node:http'
 import test, { after, before, describe } from 'node:test'
 import { closeDatabase, connectToDatabase, getDatabase } from '../config/database.ts'
 import { ROLES, type UserDocument } from '../models/user.model.ts'
+import type { AssociationDocument } from '../models/association.model.ts'
 import authRouter from '../routes/auth.routes.ts'
 import { hashPassword } from './user.service.ts'
 
 const testPassword = 'integration-test-passphrase'
 const testSigningSecret = 'integration-test-signing-secret-with-32-bytes'
+const testAssociationName = 'Integration Theatre'
 const environmentKeys = ['MONGODB_URI', 'MONGODB_DB_NAME', 'AUTH_TOKEN_SECRET'] as const
 const originalEnvironment = new Map(
   environmentKeys.map((key) => [key, process.env[key]]),
@@ -34,6 +36,13 @@ describe('auth endpoints with MongoDB', () => {
 
     await connectToDatabase()
     expectedAssociationId = new ObjectId()
+    const association: AssociationDocument = {
+      name: testAssociationName,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
+    await getDatabase().collection<AssociationDocument>('associations')
+      .insertOne({ _id: expectedAssociationId, ...association })
     const user: UserDocument = {
       firstName: 'Integration',
       lastName: 'Tester',
@@ -159,6 +168,8 @@ describe('auth endpoints with MongoDB', () => {
     })
 
     assert.equal(authenticatedResponse.status, 200)
-    assert.deepEqual(await authenticatedResponse.json(), { user: loginBody.user })
+    assert.deepEqual(await authenticatedResponse.json(), {
+      user: { ...loginBody.user as object, associationName: testAssociationName },
+    })
   })
 })

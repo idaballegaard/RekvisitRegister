@@ -95,6 +95,7 @@ export const openApiDocument = {
             },
           },
           '401': { description: 'Bearer-token mangler, er ugyldigt eller udløbet.' },
+          '404': { description: 'Brugerens forening blev ikke fundet.' },
         },
       },
     },
@@ -110,7 +111,15 @@ export const openApiDocument = {
     schemas: {
       UserProfile: {
         type: 'object',
-        required: ['userId', 'firstName', 'lastName', 'userName', 'role', 'associationId'],
+        required: [
+          'userId',
+          'firstName',
+          'lastName',
+          'userName',
+          'role',
+          'associationId',
+          'associationName',
+        ],
         properties: {
           userId: { type: 'string', example: '0123456789abcdef01234567' },
           firstName: { type: 'string', example: 'Ada' },
@@ -121,6 +130,7 @@ export const openApiDocument = {
             enum: ['associationAdmin', 'propManager', 'searchUser'],
           },
           associationId: { type: 'string', example: 'fedcba9876543210fedcba98' },
+          associationName: { type: 'string', example: 'Skarntyden' },
         },
       },
     },

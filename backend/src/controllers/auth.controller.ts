@@ -1,4 +1,6 @@
 import type { RequestHandler } from 'express'
+import { ObjectId } from 'mongodb'
+import { findAssociationById } from '../repositories/association.repository.ts'
 import { ACCESS_TOKEN_TTL_SECONDS } from '../services/access-token.service.ts'
 import {
   InvalidLoginInputError,
@@ -39,6 +41,13 @@ export const postLogin: RequestHandler = async (request, response, next) => {
   }
 }
 
-export const getCurrentUser: RequestHandler = (request, response) => {
-  response.json({ user: getAuthenticatedUser(request) })
+export const getCurrentUser: RequestHandler = async (request, response) => {
+  const user = getAuthenticatedUser(request)
+  const association = await findAssociationById(new ObjectId(user.associationId))
+  if (!association) {
+    response.status(404).json({ error: 'Brugerens forening blev ikke fundet' })
+    return
+  }
+
+  response.json({ user: { ...user, associationName: association.name } })
 }
