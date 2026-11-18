@@ -2,6 +2,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import LoginView from '../views/LoginView.vue'
 import ProfileView from '../views/ProfileView.vue'
+import ResetPasswordView from '../views/ResetPasswordView.vue'
 
 const { routerPush, routerReplace } = vi.hoisted(() => ({
   routerPush: vi.fn(),
@@ -10,6 +11,7 @@ const { routerPush, routerReplace } = vi.hoisted(() => ({
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: routerPush, replace: routerReplace }),
+  useRoute: () => ({ query: { token: 'a'.repeat(64) } }),
 }))
 
 const currentUserResponse = {
@@ -98,6 +100,62 @@ describe('LoginView', () => {
       expect(wrapper.get('[role="alert"]').text()).toContain('Brugernavn eller adgangskode er forkert')
     })
     expect(sessionStorage.getItem('rekvisit-register.access-token')).toBeNull()
+  })
+
+  it('requests a password reset without revealing whether the email exists', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({
+        message: 'Hvis e-mailadressen findes, sender vi et link til nulstilling.',
+      }),
+      { status: 202, headers: { 'Content-Type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(LoginView)
+
+    await wrapper.get('button[aria-label="Glemt adgangskode?"]').trigger('click')
+    await wrapper.get('input[name="resetEmail"]').setValue('ada@example.dk')
+    await wrapper.get('form[aria-label="Anmod om nulstilling"]').trigger('submit')
+
+    await vi.waitFor(() => {
+      expect(wrapper.get('[role="status"]').text()).toContain('Hvis e-mailadressen findes')
+    })
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'ada@example.dk' }),
+    })
+  })
+})
+
+describe('ResetPasswordView', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    sessionStorage.clear()
+  })
+
+  it('submits the token and matching new password', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ message: 'Adgangskoden er nulstillet. Du kan nu logge ind.' }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(ResetPasswordView)
+
+    await wrapper.get('input[name="newPassword"]').setValue('a-new-safe-passphrase')
+    await wrapper.get('input[name="repeatPassword"]').setValue('a-new-safe-passphrase')
+    await wrapper.get('form').trigger('submit')
+
+    await vi.waitFor(() => {
+      expect(wrapper.get('[role="status"]').text()).toContain('Adgangskoden er nulstillet')
+    })
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token: 'a'.repeat(64),
+        newPassword: 'a-new-safe-passphrase',
+      }),
+    })
   })
 })
 

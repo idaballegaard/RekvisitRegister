@@ -33,6 +33,8 @@ Brugerens dokument indeholder `firstName`, `lastName`, `userName`, `email`, `pas
 
 Sæt `AUTH_TOKEN_SECRET` i `backend/.env` til en tilfældig hemmelighed på mindst 32 bytes. Du kan generere en med `openssl rand -base64 32`. Hold værdien hemmelig, og skift den ikke, mens aktive tokens stadig skal virke. Login-endpointet accepterer JSON med `userName` og `password`:
 
+Glemt adgangskode bruger SMTP. Sæt `FRONTEND_BASE_URL` til webappens offentlige URL, og udfyld `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` og `SMTP_FROM` i `backend/.env`. Brug SMTP-udbyderens app-adgangskode/API-adgangskode, ikke en personlig konto-adgangskode. Værdierne fra `.env.example` er kun eksempler; funktionen kan ikke sende mails, før SMTP er konfigureret. Lokalt skal `FRONTEND_BASE_URL` pege på Vite-adressen (typisk `http://localhost:5173`, eller `http://localhost:5174` hvis Vite vælger den port).
+
 Start backend lokalt med `npm --prefix backend run start-dev`, og åbn `http://localhost:3000/api-docs` for Swagger UI. Brug `POST /auth/login` med brugerens almindelige adgangskode (ikke bcrypt-hashen) for at prøve login mod den konfigurerede database. Klik **Authorize** og indsæt `accessToken`-værdien fra svaret for derefter at prøve `GET /auth/me`. Swagger UI er kun aktiveret uden for `NODE_ENV=production`. Brug kun testkonti til manuel afprøvning, og del ikke tokens.
 
 ```http
@@ -58,6 +60,8 @@ router.post(
 Middleware svarer med `401` uden gyldigt login og `403`, hvis brugerens rolle mangler rettigheden. Projektet har endnu ingen rekvisit- eller andre forretningsruter; de skal tilføjes og beskyttes, når funktionerne implementeres.
 
 En indlogget bruger kan skifte adgangskode med `PATCH /auth/password`. Kaldet kræver den nuværende adgangskode og en ny adgangskode på 12-72 UTF-8 bytes. JWT-tokenet bliver ikke tilbagekaldt ved skiftet; aktive tokens udløber fortsat efter deres normale 15 minutter.
+
+På login-siden kan brugeren anmode om nulstillingslink via sin e-mailadresse. Linket udløber efter 30 minutter og kan kun bruges én gang. Der sættes en ny adgangskode på 12-72 UTF-8 bytes; allerede udstedte JWT-token udløber fortsat efter deres normale 15 minutter.
 
 ## Backend med TypeScript
 

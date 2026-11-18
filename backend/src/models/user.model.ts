@@ -36,6 +36,8 @@ export interface UserDocument {
   userName: string
   email: string
   passwordHash: string
+  passwordResetTokenHash?: string
+  passwordResetExpiresAt?: Date
   role: UserRole
   associationId: ObjectId
   createdAt: Date

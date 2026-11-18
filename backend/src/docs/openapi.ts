@@ -75,6 +75,61 @@ export const openApiDocument = {
         },
       },
     },
+    '/auth/forgot-password': {
+      post: {
+        summary: 'Anmod om et link til nulstilling af adgangskode',
+        description: 'Svarteksten afslører ikke, om e-mailadressen findes i systemet.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['email'],
+                properties: {
+                  email: { type: 'string', format: 'email', maxLength: 254 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '202': { description: 'Hvis adressen findes, sendes et nulstillingslink.' },
+          '400': { description: 'E-mailadressen mangler eller er ugyldig.' },
+          '429': { description: 'For mange forsøg.' },
+          '503': { description: 'Mailafsendelse er ikke konfigureret eller tilgængelig.' },
+        },
+      },
+    },
+    '/auth/reset-password': {
+      post: {
+        summary: 'Nulstil adgangskode med et engangslink',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['token', 'newPassword'],
+                properties: {
+                  token: { type: 'string', minLength: 64, maxLength: 64 },
+                  newPassword: {
+                    type: 'string',
+                    format: 'password',
+                    description: 'Skal være 12-72 UTF-8 bytes.',
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Adgangskoden er nulstillet.' },
+          '400': { description: 'Felter er ugyldige, eller tokenet er ugyldigt, brugt eller udløbet.' },
+          '429': { description: 'For mange forsøg.' },
+        },
+      },
+    },
     '/auth/me': {
       get: {
         summary: 'Hent profilen for den indloggede bruger',

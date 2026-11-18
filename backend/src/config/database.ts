@@ -24,6 +24,10 @@ export async function connectToDatabase(): Promise<Db> {
 
     const users = database.collection('users')
     await users.createIndex({ userName: 1 }, { unique: true, name: 'unique_user_name' })
+    await users.createIndex(
+      { passwordResetTokenHash: 1 },
+      { unique: true, sparse: true, name: 'unique_password_reset_token_hash' },
+    )
     try {
       await users.createIndex(
         { email: 1 },

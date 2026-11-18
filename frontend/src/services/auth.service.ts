@@ -29,6 +29,11 @@ interface ChangePasswordCredentials {
   newPassword: string
 }
 
+interface ResetPasswordCredentials {
+  token: string
+  newPassword: string
+}
+
 const ACCESS_TOKEN_KEY = 'rekvisit-register.access-token'
 
 export class UnauthorizedError extends Error {}
@@ -272,6 +277,75 @@ export async function updateProfile(email: string): Promise<void> {
     throw new Error(`E-mailadressen kunne ikke opdateres (HTTP ${response.status}).`)
   }
 
+  if (
+    typeof body !== 'object'
+    || body === null
+    || !('message' in body)
+    || typeof body.message !== 'string'
+  ) {
+    throw new Error('Serveren returnerede et ugyldigt svar.')
+  }
+}
+
+export async function requestPasswordReset(email: string): Promise<void> {
+  let response: Response
+  try {
+    response = await fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    })
+  } catch {
+    throw new Error('Kunne ikke kontakte serveren. Kontrollér, at backend kører.')
+  }
+
+  const body: unknown = await parseResponseBody(response)
+  if (!response.ok) {
+    throw responseError(body, `Anmodningen fejlede (HTTP ${response.status}).`)
+  }
+  requireResponseMessage(body)
+}
+
+export async function resetPassword(credentials: ResetPasswordCredentials): Promise<void> {
+  let response: Response
+  try {
+    response = await fetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(credentials),
+    })
+  } catch {
+    throw new Error('Kunne ikke kontakte serveren. Kontrollér, at backend kører.')
+  }
+
+  const body: unknown = await parseResponseBody(response)
+  if (!response.ok) {
+    throw responseError(body, `Adgangskoden kunne ikke nulstilles (HTTP ${response.status}).`)
+  }
+  requireResponseMessage(body)
+}
+
+async function parseResponseBody(response: Response): Promise<unknown> {
+  try {
+    return await response.json()
+  } catch {
+    throw new Error('Serveren returnerede et ugyldigt svar.')
+  }
+}
+
+function responseError(body: unknown, fallbackMessage: string): Error {
+  if (
+    typeof body === 'object'
+    && body !== null
+    && 'error' in body
+    && typeof body.error === 'string'
+  ) {
+    return new Error(body.error)
+  }
+  return new Error(fallbackMessage)
+}
+
+function requireResponseMessage(body: unknown): void {
   if (
     typeof body !== 'object'
     || body === null

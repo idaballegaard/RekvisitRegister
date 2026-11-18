@@ -1,8 +1,14 @@
+import { createHash, randomBytes } from 'node:crypto'
 import { MongoServerError, ObjectId, type WithId } from 'mongodb'
 import { ROLES, type UserDocument } from '../models/user.model.ts'
 import {
+  clearPasswordResetToken,
+  findUserByEmail,
   findUserById,
+  findUserByPasswordResetToken,
   findUserByUserName,
+  storePasswordResetToken,
+  updatePasswordWithResetToken,
   updateUserPasswordHash,
   updateUserProfile,
 } from '../repositories/user.repository.ts'
@@ -14,6 +20,10 @@ import {
   verifyPassword,
 } from './user.service.ts'
 import { createAccessToken, type AuthenticatedUser } from './access-token.service.ts'
+import {
+  createPasswordResetUrl,
+  sendPasswordResetEmail,
+} from './email.service.ts'
 
 export interface LoginInput {
   userName: string
@@ -28,6 +38,9 @@ export class PasswordChangeConflictError extends Error {}
 export class InvalidProfileInputError extends Error {}
 export class ProfileUserNotFoundError extends Error {}
 export class EmailAlreadyInUseError extends Error {}
+export class InvalidPasswordResetInputError extends Error {}
+export class InvalidPasswordResetTokenError extends Error {}
+export class PasswordResetDeliveryError extends Error {}
 
 export interface ChangePasswordInput {
   currentPassword: string
@@ -36,6 +49,15 @@ export interface ChangePasswordInput {
 
 export interface UpdateProfileInput {
   email: string
+}
+
+export interface RequestPasswordResetInput {
+  email: string
+}
+
+export interface ResetPasswordInput {
+  token: string
+  newPassword: string
 }
 
 export function validateLoginInput(input: unknown): LoginInput {
@@ -175,6 +197,104 @@ export async function updateProfile(
   }
   if (!updated) {
     throw new ProfileUserNotFoundError()
+  }
+}
+
+export function validateRequestPasswordResetInput(input: unknown): RequestPasswordResetInput {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    throw new InvalidPasswordResetInputError('E-mailadressen mangler eller er ugyldig')
+  }
+
+  const { email } = input as Record<string, unknown>
+  if (typeof email !== 'string' || !isValidEmail(normalizeEmail(email))) {
+    throw new InvalidPasswordResetInputError('Indtast en gyldig e-mailadresse')
+  }
+
+  return { email: normalizeEmail(email) }
+}
+
+export function validateResetPasswordInput(input: unknown): ResetPasswordInput {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    throw new InvalidPasswordResetInputError('Nulstillingsoplysningerne er ugyldige')
+  }
+
+  const { token, newPassword } = input as Record<string, unknown>
+  if (
+    typeof token !== 'string'
+    || !/^[a-f\d]{64}$/i.test(token)
+    || typeof newPassword !== 'string'
+  ) {
+    throw new InvalidPasswordResetInputError('Nulstillingsoplysningerne er ugyldige')
+  }
+
+  const passwordBytes = Buffer.byteLength(newPassword, 'utf8')
+  if (passwordBytes < 12 || passwordBytes > 72) {
+    throw new InvalidPasswordResetInputError(
+      'Den nye adgangskode skal være mindst 12 og højst 72 bytes',
+    )
+  }
+
+  return { token, newPassword }
+}
+
+function hashResetToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex')
+}
+
+export async function requestPasswordReset(
+  email: string,
+  sendEmail: (recipient: string, resetUrl: string) => Promise<void> = sendPasswordResetEmail,
+): Promise<void> {
+  const user = await findUserByEmail(email)
+  if (!user) {
+    return
+  }
+
+  const token = randomBytes(32).toString('hex')
+  const tokenHash = hashResetToken(token)
+  const stored = await storePasswordResetToken(
+    user._id,
+    tokenHash,
+    new Date(Date.now() + 30 * 60 * 1000),
+  )
+  if (!stored) {
+    return
+  }
+
+  try {
+    await sendEmail(user.email, createPasswordResetUrl(token))
+  } catch (error) {
+    try {
+      await clearPasswordResetToken(user._id, tokenHash)
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        'Nulstillingsmailen fejlede, og tokenet kunne ikke ryddes fra databasen',
+      )
+    }
+    throw new PasswordResetDeliveryError('Nulstillingsmailen kunne ikke sendes', {
+      cause: error,
+    })
+  }
+}
+
+export async function resetPassword(input: ResetPasswordInput): Promise<void> {
+  const tokenHash = hashResetToken(input.token)
+  const now = new Date()
+  const user = await findUserByPasswordResetToken(tokenHash, now)
+  if (!user) {
+    throw new InvalidPasswordResetTokenError()
+  }
+
+  const passwordHash = await hashPassword(input.newPassword)
+  const updated = await updatePasswordWithResetToken(
+    user._id,
+    tokenHash,
+    passwordHash,
+    now,
+  )
+  if (!updated) {
+    throw new InvalidPasswordResetTokenError()
   }
 }
 

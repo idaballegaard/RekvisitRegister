@@ -9,13 +9,24 @@ import { closeDatabase, connectToDatabase, getDatabase } from '../config/databas
 import { ROLES, type UserDocument } from '../models/user.model.ts'
 import type { AssociationDocument } from '../models/association.model.ts'
 import authRouter from '../routes/auth.routes.ts'
+import { requestPasswordReset } from './auth.service.ts'
 import { hashPassword } from './user.service.ts'
 
 const testPassword = 'integration-test-passphrase'
 const testEmail = 'integration@example.dk'
 const testSigningSecret = 'integration-test-signing-secret-with-32-bytes'
 const testAssociationName = 'Integration Theatre'
-const environmentKeys = ['MONGODB_URI', 'MONGODB_DB_NAME', 'AUTH_TOKEN_SECRET'] as const
+const environmentKeys = [
+  'MONGODB_URI',
+  'MONGODB_DB_NAME',
+  'AUTH_TOKEN_SECRET',
+  'FRONTEND_BASE_URL',
+  'SMTP_HOST',
+  'SMTP_PORT',
+  'SMTP_USER',
+  'SMTP_PASSWORD',
+  'SMTP_FROM',
+] as const
 const originalEnvironment = new Map(
   environmentKeys.map((key) => [key, process.env[key]]),
 )
@@ -36,6 +47,12 @@ describe('auth endpoints with MongoDB', () => {
     process.env.MONGODB_URI = mongoServer.getUri()
     process.env.MONGODB_DB_NAME = 'auth_integration_test'
     process.env.AUTH_TOKEN_SECRET = testSigningSecret
+    process.env.FRONTEND_BASE_URL = 'http://localhost:5173'
+    process.env.SMTP_HOST = 'smtp.example.test'
+    process.env.SMTP_PORT = '587'
+    process.env.SMTP_USER = 'smtp-user'
+    process.env.SMTP_PASSWORD = 'smtp-password'
+    process.env.SMTP_FROM = 'Rekvisit Test <no-reply@example.test>'
 
     await connectToDatabase()
     expectedAssociationId = new ObjectId()
@@ -168,6 +185,19 @@ describe('auth endpoints with MongoDB', () => {
     })
 
     assert.equal(response.status, 400)
+  })
+
+  test('returns a generic response for an unknown reset email', async () => {
+    const response = await fetch(`${baseUrl}/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'unknown@example.dk' }),
+    })
+
+    assert.equal(response.status, 202)
+    assert.deepEqual(await response.json(), {
+      message: 'Hvis e-mailadressen findes, sender vi et link til nulstilling.',
+    })
   })
 
   test('requires a valid token for the current-user endpoint', async () => {
@@ -325,6 +355,76 @@ describe('auth endpoints with MongoDB', () => {
       body: JSON.stringify({
         userName: 'integration.test',
         password: 'new-integration-passphrase',
+      }),
+    })
+    assert.equal(newPasswordResponse.status, 200)
+  })
+
+  test('resets password with a one-time email token', async () => {
+    await assert.rejects(
+      () => requestPasswordReset('reserved@example.dk', async () => {
+        throw new Error('test SMTP failure')
+      }),
+      /Nulstillingsmailen kunne ikke sendes/,
+    )
+    const userAfterDeliveryFailure = await getDatabase().collection<UserDocument>('users')
+      .findOne({ _id: reservedEmailUserId })
+    assert.equal(userAfterDeliveryFailure?.passwordResetTokenHash, undefined)
+
+    let expiredResetUrl = ''
+    await requestPasswordReset('reserved@example.dk', async (_recipient, url) => {
+      expiredResetUrl = url
+    })
+    const expiredToken = new URL(expiredResetUrl).searchParams.get('token')
+    assert.ok(expiredToken)
+    await getDatabase().collection<UserDocument>('users').updateOne(
+      { _id: reservedEmailUserId },
+      { $set: { passwordResetExpiresAt: new Date(Date.now() - 1000) } },
+    )
+    const expiredResponse = await fetch(`${baseUrl}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: expiredToken, newPassword: 'new-reserved-passphrase' }),
+    })
+    assert.equal(expiredResponse.status, 400)
+
+    let resetUrl = ''
+    await requestPasswordReset('reserved@example.dk', async (_recipient, url) => {
+      resetUrl = url
+    })
+    const token = new URL(resetUrl).searchParams.get('token')
+    assert.ok(token)
+
+    const resetResponse = await fetch(`${baseUrl}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, newPassword: 'new-reserved-passphrase' }),
+    })
+    assert.equal(resetResponse.status, 200)
+    assert.deepEqual(await resetResponse.json(), {
+      message: 'Adgangskoden er nulstillet. Du kan nu logge ind.',
+    })
+
+    const reusedTokenResponse = await fetch(`${baseUrl}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, newPassword: 'another-reserved-passphrase' }),
+    })
+    assert.equal(reusedTokenResponse.status, 400)
+
+    const oldPasswordResponse = await fetch(`${baseUrl}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userName: 'reserved.email', password: testPassword }),
+    })
+    assert.equal(oldPasswordResponse.status, 401)
+
+    const newPasswordResponse = await fetch(`${baseUrl}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userName: 'reserved.email',
+        password: 'new-reserved-passphrase',
       }),
     })
     assert.equal(newPasswordResponse.status, 200)

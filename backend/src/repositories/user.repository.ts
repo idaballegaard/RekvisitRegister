@@ -18,6 +18,67 @@ export async function findUserById(userId: ObjectId): Promise<WithId<UserDocumen
   return getDatabase().collection<UserDocument>('users').findOne({ _id: userId })
 }
 
+export async function findUserByEmail(email: string): Promise<WithId<UserDocument> | null> {
+  return getDatabase().collection<UserDocument>('users').findOne(
+    { email },
+    { collation: { locale: 'en', strength: 2 } },
+  )
+}
+
+export async function storePasswordResetToken(
+  userId: ObjectId,
+  tokenHash: string,
+  expiresAt: Date,
+): Promise<boolean> {
+  const result = await getDatabase().collection<UserDocument>('users').updateOne(
+    { _id: userId },
+    { $set: { passwordResetTokenHash: tokenHash, passwordResetExpiresAt: expiresAt } },
+  )
+
+  return result.matchedCount === 1
+}
+
+export async function clearPasswordResetToken(
+  userId: ObjectId,
+  tokenHash: string,
+): Promise<void> {
+  await getDatabase().collection<UserDocument>('users').updateOne(
+    { _id: userId, passwordResetTokenHash: tokenHash },
+    { $unset: { passwordResetTokenHash: '', passwordResetExpiresAt: '' } },
+  )
+}
+
+export async function findUserByPasswordResetToken(
+  tokenHash: string,
+  now: Date,
+): Promise<WithId<UserDocument> | null> {
+  return getDatabase().collection<UserDocument>('users').findOne({
+    passwordResetTokenHash: tokenHash,
+    passwordResetExpiresAt: { $gt: now },
+  })
+}
+
+export async function updatePasswordWithResetToken(
+  userId: ObjectId,
+  tokenHash: string,
+  newPasswordHash: string,
+  now: Date,
+): Promise<boolean> {
+  const result = await getDatabase().collection<UserDocument>('users').updateOne(
+    {
+      _id: userId,
+      passwordResetTokenHash: tokenHash,
+      passwordResetExpiresAt: { $gt: now },
+    },
+    {
+      $set: { passwordHash: newPasswordHash, updatedAt: now },
+      $unset: { passwordResetTokenHash: '', passwordResetExpiresAt: '' },
+    },
+  )
+
+  return result.modifiedCount === 1
+}
+
 export async function updateUserPasswordHash(
   userId: ObjectId,
   currentPasswordHash: string,
@@ -25,7 +86,10 @@ export async function updateUserPasswordHash(
 ): Promise<boolean> {
   const result = await getDatabase().collection<UserDocument>('users').updateOne(
     { _id: userId, passwordHash: currentPasswordHash },
-    { $set: { passwordHash: newPasswordHash, updatedAt: new Date() } },
+    {
+      $set: { passwordHash: newPasswordHash, updatedAt: new Date() },
+      $unset: { passwordResetTokenHash: '', passwordResetExpiresAt: '' },
+    },
   )
 
   return result.modifiedCount === 1
@@ -37,7 +101,10 @@ export async function updateUserProfile(
 ): Promise<boolean> {
   const result = await getDatabase().collection<UserDocument>('users').updateOne(
     { _id: userId },
-    { $set: { email: profile.email, updatedAt: new Date() } },
+    {
+      $set: { email: profile.email, updatedAt: new Date() },
+      $unset: { passwordResetTokenHash: '', passwordResetExpiresAt: '' },
+    },
   )
 
   return result.matchedCount === 1

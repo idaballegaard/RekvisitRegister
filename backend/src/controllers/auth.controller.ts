@@ -3,26 +3,37 @@ import { ObjectId } from 'mongodb'
 import { findAssociationById } from '../repositories/association.repository.ts'
 import { findUserById } from '../repositories/user.repository.ts'
 import { ACCESS_TOKEN_TTL_SECONDS } from '../services/access-token.service.ts'
+import { EmailConfigurationError } from '../services/email.service.ts'
 import { isValidEmail } from '../services/user.service.ts'
 import {
   changePassword,
   EmailAlreadyInUseError,
   IncorrectCurrentPasswordError,
+  InvalidPasswordResetInputError,
+  InvalidPasswordResetTokenError,
   InvalidProfileInputError,
   InvalidPasswordChangeInputError,
   InvalidLoginInputError,
   login,
   PasswordChangeConflictError,
   PasswordChangeUserNotFoundError,
+  PasswordResetDeliveryError,
   ProfileUserNotFoundError,
   type ChangePasswordInput,
   type LoginInput,
+  type RequestPasswordResetInput,
+  type ResetPasswordInput,
   type UpdateProfileInput,
+  requestPasswordReset,
+  resetPassword,
   updateProfile,
   validateLoginInput,
   validateChangePasswordInput,
+  validateRequestPasswordResetInput,
+  validateResetPasswordInput,
   validateUpdateProfileInput,
 } from '../services/auth.service.ts'
+import { assertEmailDeliveryConfigured } from '../services/email.service.ts'
 import { getAuthenticatedUser } from '../middleware/auth.middleware.ts'
 
 export const postLogin: RequestHandler = async (request, response, next) => {
@@ -153,6 +164,69 @@ export const patchPassword: RequestHandler = async (request, response, next) => 
     if (error instanceof PasswordChangeConflictError) {
       response.status(409).json({
         error: 'Adgangskoden blev ændret samtidig. Prøv igen.',
+      })
+      return
+    }
+    next(error)
+  }
+}
+
+export const postForgotPassword: RequestHandler = async (request, response, next) => {
+  let input: RequestPasswordResetInput
+  try {
+    input = validateRequestPasswordResetInput(request.body)
+    assertEmailDeliveryConfigured()
+  } catch (error) {
+    if (error instanceof InvalidPasswordResetInputError) {
+      response.status(400).json({ error: error.message })
+      return
+    }
+    if (error instanceof EmailConfigurationError) {
+      response.status(503).json({
+        error: 'Nulstilling af adgangskode er ikke konfigureret. Kontakt administratoren.',
+      })
+      return
+    }
+    next(error)
+    return
+  }
+
+  try {
+    await requestPasswordReset(input.email)
+    response.status(202).json({
+      message: 'Hvis e-mailadressen findes, sender vi et link til nulstilling.',
+    })
+  } catch (error) {
+    if (error instanceof PasswordResetDeliveryError) {
+      response.status(503).json({
+        error: 'Nulstillingsmailen kunne ikke sendes. Prøv igen senere.',
+      })
+      return
+    }
+    next(error)
+  }
+}
+
+export const postResetPassword: RequestHandler = async (request, response, next) => {
+  let input: ResetPasswordInput
+  try {
+    input = validateResetPasswordInput(request.body)
+  } catch (error) {
+    if (error instanceof InvalidPasswordResetInputError) {
+      response.status(400).json({ error: error.message })
+      return
+    }
+    next(error)
+    return
+  }
+
+  try {
+    await resetPassword(input)
+    response.json({ message: 'Adgangskoden er nulstillet. Du kan nu logge ind.' })
+  } catch (error) {
+    if (error instanceof InvalidPasswordResetTokenError) {
+      response.status(400).json({
+        error: 'Nulstillingslinket er ugyldigt eller udløbet. Bed om et nyt link.',
       })
       return
     }

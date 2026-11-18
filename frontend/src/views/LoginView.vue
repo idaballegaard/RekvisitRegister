@@ -1,14 +1,19 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { login } from '../services/auth.service'
+import { login, requestPasswordReset } from '../services/auth.service'
 
 const router = useRouter()
 const passwordVisible = ref(false)
 const userName = ref('')
 const password = ref('')
+const resetEmail = ref('')
 const isSubmitting = ref(false)
+const isRequestingReset = ref(false)
+const showForgotPassword = ref(false)
 const errorMessage = ref('')
+const resetErrorMessage = ref('')
+const resetMessage = ref('')
 
 async function submitLogin(): Promise<void> {
   isSubmitting.value = true
@@ -24,6 +29,22 @@ async function submitLogin(): Promise<void> {
       : 'Login kunne ikke gennemføres.'
   } finally {
     isSubmitting.value = false
+  }
+}
+
+async function submitForgotPassword(): Promise<void> {
+  isRequestingReset.value = true
+  resetErrorMessage.value = ''
+  resetMessage.value = ''
+  try {
+    await requestPasswordReset(resetEmail.value)
+    resetMessage.value = 'Hvis e-mailadressen findes, sender vi et link til nulstilling.'
+  } catch (error) {
+    resetErrorMessage.value = error instanceof Error
+      ? error.message
+      : 'Anmodningen kunne ikke gennemføres.'
+  } finally {
+    isRequestingReset.value = false
   }
 }
 </script>
@@ -97,12 +118,6 @@ async function submitLogin(): Promise<void> {
             </button>
           </div>
 
-          <a
-            class="mb-3 self-end text-[13px] text-brand underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-brand"
-            href="#support"
-          >
-            Glemt adgangskode?
-          </a>
           <button
             class="flex h-[35px] cursor-pointer items-center justify-center gap-4 rounded-[5px] border-0 bg-brand text-sm font-bold text-white hover:bg-[#7d0202] focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-brand"
             type="submit"
@@ -114,6 +129,44 @@ async function submitLogin(): Promise<void> {
           </button>
           <p v-if="errorMessage" class="mt-[9px] text-xs text-brand" role="alert">
             {{ errorMessage }}
+          </p>
+        </form>
+        <button
+          class="mt-3 mb-3 ml-auto border-0 bg-transparent p-0 text-[13px] text-brand underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-brand"
+          type="button"
+          aria-label="Glemt adgangskode?"
+          @click="showForgotPassword = !showForgotPassword; resetErrorMessage = ''; resetMessage = ''"
+        >
+          Glemt adgangskode?
+        </button>
+        <form
+          v-if="showForgotPassword"
+          aria-label="Anmod om nulstilling"
+          class="mb-4 flex flex-col border-t border-[#d8d6d6] pt-3"
+          @submit.prevent="submitForgotPassword"
+        >
+          <label for="reset-email" class="mb-2 text-xs font-bold">E-mailadresse</label>
+          <input
+            id="reset-email"
+            v-model.trim="resetEmail"
+            name="resetEmail"
+            type="email"
+            autocomplete="email"
+            required
+            class="mb-3 h-[35px] w-full rounded-[5px] border border-gray-light bg-white px-[10px] text-[13px] focus-visible:outline-2 focus-visible:outline-brand"
+          />
+          <button
+            class="h-[35px] rounded-[5px] border-0 bg-[#f5eded] text-xs font-bold text-brand disabled:opacity-60"
+            type="submit"
+            :disabled="isRequestingReset"
+          >
+            {{ isRequestingReset ? 'Sender…' : 'Send nulstillingslink' }}
+          </button>
+          <p v-if="resetMessage" class="mt-2 text-xs text-gray-medium" role="status">
+            {{ resetMessage }}
+          </p>
+          <p v-if="resetErrorMessage" class="mt-2 text-xs text-brand" role="alert">
+            {{ resetErrorMessage }}
           </p>
         </form>
 
