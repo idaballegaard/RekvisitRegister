@@ -1,4 +1,4 @@
-import type { ClientSession, ObjectId } from 'mongodb'
+import type { ClientSession, ObjectId, WithId } from 'mongodb'
 import { getDatabase } from '../config/database.ts'
 import type { AssociationDocument } from '../models/association.model.ts'
 
@@ -15,4 +15,12 @@ export async function createAssociation(
     .insertOne(association, { session })
 
   return result.insertedId
+}
+
+export async function findAssociationById(
+  associationId: ObjectId,
+): Promise<WithId<AssociationDocument> | null> {
+  return getDatabase()
+    .collection<AssociationDocument>('associations')
+    .findOne({ _id: associationId })
 }

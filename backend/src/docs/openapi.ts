@@ -75,6 +75,97 @@ export const openApiDocument = {
         },
       },
     },
+    '/auth/forgot-password': {
+      post: {
+        summary: 'Anmod om et link til nulstilling af adgangskode',
+        description: 'Svarteksten afslører ikke, om e-mailadressen findes i systemet.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['email'],
+                properties: {
+                  email: { type: 'string', format: 'email', maxLength: 254 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '202': { description: 'Hvis adressen findes, sendes et nulstillingslink.' },
+          '400': { description: 'E-mailadressen mangler eller er ugyldig.' },
+          '429': { description: 'For mange forsøg.' },
+          '503': { description: 'Mailafsendelse er ikke konfigureret eller tilgængelig.' },
+        },
+      },
+    },
+    '/auth/reset-password': {
+      post: {
+        summary: 'Nulstil adgangskode med et engangslink',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['token', 'newPassword'],
+                properties: {
+                  token: { type: 'string', minLength: 64, maxLength: 64 },
+                  newPassword: {
+                    type: 'string',
+                    format: 'password',
+                    description: 'Skal være 12-72 UTF-8 bytes.',
+                  },
+                },
+                '/auth/email-verification': {
+                  post: {
+                    summary: 'Send bekræftelseslink til den indloggede brugers e-mail',
+                    security: [{ bearerAuth: [] }],
+                    responses: {
+                      '202': { description: 'Et link er sendt, hvis e-mailadressen ikke allerede er bekræftet.' },
+                      '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
+                      '429': { description: 'For mange forsøg.' },
+                      '503': { description: 'Mailafsendelse er ikke konfigureret eller tilgængelig.' },
+                    },
+                  },
+                },
+                '/auth/confirm-email': {
+                  post: {
+                    summary: 'Bekræft e-mailadresse med et engangslink',
+                    requestBody: {
+                      required: true,
+                      content: {
+                        'application/json': {
+                          schema: {
+                            type: 'object',
+                            required: ['token'],
+                            properties: {
+                              token: { type: 'string', minLength: 64, maxLength: 64 },
+                            },
+                          },
+                        },
+                      },
+                    },
+                    responses: {
+                      '200': { description: 'E-mailadressen er bekræftet.' },
+                      '400': { description: 'Bekræftelsestokenet er ugyldigt, brugt eller udløbet.' },
+                      '429': { description: 'For mange forsøg.' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Adgangskoden er nulstillet.' },
+          '400': { description: 'Felter er ugyldige, eller tokenet er ugyldigt, brugt eller udløbet.' },
+          '429': { description: 'For mange forsøg.' },
+        },
+      },
+    },
     '/auth/me': {
       get: {
         summary: 'Hent profilen for den indloggede bruger',
@@ -95,6 +186,66 @@ export const openApiDocument = {
             },
           },
           '401': { description: 'Bearer-token mangler, er ugyldigt eller udløbet.' },
+          '404': { description: 'Brugerens forening blev ikke fundet.' },
+        },
+      },
+    },
+    '/auth/profile': {
+      patch: {
+        summary: 'Opdatér e-mailadressen for den indloggede bruger',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['email'],
+                properties: {
+                  email: { type: 'string', format: 'email', maxLength: 254 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'E-mailadressen blev opdateret.' },
+          '400': { description: 'E-mail mangler eller er ugyldig.' },
+          '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
+          '409': { description: 'E-mailadressen er allerede knyttet til en anden bruger.' },
+          '404': { description: 'Brugeren findes ikke længere.' },
+        },
+      },
+    },
+    '/auth/password': {
+      patch: {
+        summary: 'Skift adgangskode for den indloggede bruger',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['currentPassword', 'newPassword'],
+                properties: {
+                  currentPassword: { type: 'string', format: 'password' },
+                  newPassword: {
+                    type: 'string',
+                    format: 'password',
+                    description: 'Skal være 12-72 UTF-8 bytes.',
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Adgangskoden blev opdateret.' },
+          '400': { description: 'Felter mangler, ny adgangskode er ugyldig, eller nuværende adgangskode er forkert.' },
+          '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
+          '404': { description: 'Brugeren findes ikke længere.' },
+          '409': { description: 'Adgangskoden blev ændret samtidig.' },
         },
       },
     },
@@ -110,17 +261,28 @@ export const openApiDocument = {
     schemas: {
       UserProfile: {
         type: 'object',
-        required: ['userId', 'firstName', 'lastName', 'userName', 'role', 'associationId'],
+        required: [
+          'userId',
+          'firstName',
+          'lastName',
+          'userName',
+          'email',
+          'role',
+          'associationId',
+          'associationName',
+        ],
         properties: {
           userId: { type: 'string', example: '0123456789abcdef01234567' },
           firstName: { type: 'string', example: 'Ada' },
           lastName: { type: 'string', example: 'Lovelace' },
           userName: { type: 'string', example: 'ada.l' },
+          email: { type: 'string', format: 'email', example: 'ada@example.dk' },
           role: {
             type: 'string',
             enum: ['associationAdmin', 'propManager', 'searchUser'],
           },
           associationId: { type: 'string', example: 'fedcba9876543210fedcba98' },
+          associationName: { type: 'string', example: 'Skarntyden' },
         },
       },
     },

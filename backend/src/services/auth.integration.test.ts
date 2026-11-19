@@ -7,12 +7,26 @@ import type { Server } from 'node:http'
 import test, { after, before, describe } from 'node:test'
 import { closeDatabase, connectToDatabase, getDatabase } from '../config/database.ts'
 import { ROLES, type UserDocument } from '../models/user.model.ts'
+import type { AssociationDocument } from '../models/association.model.ts'
 import authRouter from '../routes/auth.routes.ts'
+import { requestEmailVerification, requestPasswordReset } from './auth.service.ts'
 import { hashPassword } from './user.service.ts'
 
 const testPassword = 'integration-test-passphrase'
+const testEmail = 'integration@example.dk'
 const testSigningSecret = 'integration-test-signing-secret-with-32-bytes'
-const environmentKeys = ['MONGODB_URI', 'MONGODB_DB_NAME', 'AUTH_TOKEN_SECRET'] as const
+const testAssociationName = 'Integration Theatre'
+const environmentKeys = [
+  'MONGODB_URI',
+  'MONGODB_DB_NAME',
+  'AUTH_TOKEN_SECRET',
+  'FRONTEND_BASE_URL',
+  'SMTP_HOST',
+  'SMTP_PORT',
+  'SMTP_USER',
+  'SMTP_PASSWORD',
+  'SMTP_FROM',
+] as const
 const originalEnvironment = new Map(
   environmentKeys.map((key) => [key, process.env[key]]),
 )
@@ -22,6 +36,8 @@ let httpServer: Server | undefined
 let baseUrl: string
 let expectedAssociationId: ObjectId
 let expectedUserId: string
+let reservedEmailUserId: ObjectId
+let authenticatedAccessToken: string
 
 describe('auth endpoints with MongoDB', () => {
   before(async () => {
@@ -31,13 +47,28 @@ describe('auth endpoints with MongoDB', () => {
     process.env.MONGODB_URI = mongoServer.getUri()
     process.env.MONGODB_DB_NAME = 'auth_integration_test'
     process.env.AUTH_TOKEN_SECRET = testSigningSecret
+    process.env.FRONTEND_BASE_URL = 'http://localhost:5173'
+    process.env.SMTP_HOST = 'smtp.example.test'
+    process.env.SMTP_PORT = '587'
+    process.env.SMTP_USER = 'smtp-user'
+    process.env.SMTP_PASSWORD = 'smtp-password'
+    process.env.SMTP_FROM = 'Rekvisit Test <no-reply@example.test>'
 
     await connectToDatabase()
     expectedAssociationId = new ObjectId()
+    const association: AssociationDocument = {
+      name: testAssociationName,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
+    await getDatabase().collection<AssociationDocument>('associations')
+      .insertOne({ _id: expectedAssociationId, ...association })
     const user: UserDocument = {
       firstName: 'Integration',
       lastName: 'Tester',
       userName: 'integration.test',
+      email: testEmail,
+      emailVerifiedAt: new Date(),
       passwordHash: await hashPassword(testPassword),
       role: ROLES.ASSOCIATION_ADMIN,
       associationId: expectedAssociationId,
@@ -46,6 +77,21 @@ describe('auth endpoints with MongoDB', () => {
     }
     const insertResult = await getDatabase().collection<UserDocument>('users').insertOne(user)
     expectedUserId = insertResult.insertedId.toHexString()
+    const reservedEmailUser: UserDocument = {
+      firstName: 'Reserved',
+      lastName: user.lastName,
+      userName: 'reserved.email',
+      email: 'reserved@example.dk',
+      emailVerifiedAt: new Date(),
+      passwordHash: user.passwordHash,
+      role: user.role,
+      associationId: expectedAssociationId,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    }
+    const reservedUserResult = await getDatabase().collection<UserDocument>('users')
+      .insertOne(reservedEmailUser)
+    reservedEmailUserId = reservedUserResult.insertedId
 
     const app = express()
     app.use(express.json())
@@ -94,6 +140,7 @@ describe('auth endpoints with MongoDB', () => {
     assert.equal(body.tokenType, 'Bearer')
     assert.equal(body.expiresIn, 900)
     assert.ok(body.accessToken)
+    authenticatedAccessToken = body.accessToken
     assert.deepEqual(body.user, {
       userId: expectedUserId,
       firstName: 'Integration',
@@ -142,6 +189,19 @@ describe('auth endpoints with MongoDB', () => {
     assert.equal(response.status, 400)
   })
 
+  test('returns a generic response for an unknown reset email', async () => {
+    const response = await fetch(`${baseUrl}/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'unknown@example.dk' }),
+    })
+
+    assert.equal(response.status, 202)
+    assert.deepEqual(await response.json(), {
+      message: 'Hvis e-mailadressen findes, sender vi et link til nulstilling.',
+    })
+  })
+
   test('requires a valid token for the current-user endpoint', async () => {
     const unauthenticatedResponse = await fetch(`${baseUrl}/auth/me`)
     assert.equal(unauthenticatedResponse.status, 401)
@@ -159,6 +219,265 @@ describe('auth endpoints with MongoDB', () => {
     })
 
     assert.equal(authenticatedResponse.status, 200)
-    assert.deepEqual(await authenticatedResponse.json(), { user: loginBody.user })
+    assert.deepEqual(await authenticatedResponse.json(), {
+      user: {
+        ...loginBody.user as object,
+        email: testEmail,
+        emailVerified: true,
+        associationName: testAssociationName,
+      },
+    })
+  })
+
+  test('updates the authenticated user email and rejects invalid addresses', async () => {
+    const invalidResponse = await fetch(`${baseUrl}/auth/profile`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${authenticatedAccessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email: 'not-an-email' }),
+    })
+    assert.equal(invalidResponse.status, 400)
+
+    const duplicateResponse = await fetch(`${baseUrl}/auth/profile`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${authenticatedAccessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email: 'RESERVED@example.dk' }),
+    })
+    assert.equal(duplicateResponse.status, 409)
+    assert.deepEqual(await duplicateResponse.json(), {
+      error: 'E-mailadressen er allerede knyttet til en anden bruger.',
+    })
+
+    const updateResponse = await fetch(`${baseUrl}/auth/profile`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${authenticatedAccessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email: '  NEW.EMAIL@EXAMPLE.DK  ' }),
+    })
+    assert.equal(updateResponse.status, 200)
+    assert.deepEqual(await updateResponse.json(), {
+      message: 'E-mailadressen er opdateret.',
+      emailVerified: false,
+    })
+
+    const profileResponse = await fetch(`${baseUrl}/auth/me`, {
+      headers: { Authorization: `Bearer ${authenticatedAccessToken}` },
+    })
+    const profileBody = await profileResponse.json() as {
+      user: { email: string; emailVerified: boolean }
+    }
+    assert.equal(profileBody.user.email, 'new.email@example.dk')
+    assert.equal(profileBody.user.emailVerified, false)
+    const reservedUser = await getDatabase().collection<UserDocument>('users')
+      .findOne({ _id: reservedEmailUserId })
+    assert.equal(reservedUser?.email, 'reserved@example.dk')
+  })
+
+  test('verifies a changed email and rejects replayed verification tokens', async () => {
+    let verificationUrl = ''
+    await requestEmailVerification(expectedUserId, async (_recipient, url) => {
+      verificationUrl = url
+    })
+    const token = new URL(verificationUrl).searchParams.get('token')
+    assert.ok(token)
+
+    const confirmationResponse = await fetch(`${baseUrl}/auth/confirm-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    })
+    assert.equal(confirmationResponse.status, 200)
+
+    const replayResponse = await fetch(`${baseUrl}/auth/confirm-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    })
+    assert.equal(replayResponse.status, 400)
+
+    const user = await getDatabase().collection<UserDocument>('users')
+      .findOne({ _id: new ObjectId(expectedUserId) })
+    assert.ok(user?.emailVerifiedAt)
+    assert.equal(user?.emailVerificationTokenHash, undefined)
+  })
+
+  test('does not send password-reset mail to an unverified email', async () => {
+    let sentMail = false
+    await getDatabase().collection<UserDocument>('users').updateOne(
+      { _id: reservedEmailUserId },
+      { $unset: { emailVerifiedAt: '' } },
+    )
+    await requestPasswordReset('reserved@example.dk', async () => {
+      sentMail = true
+    })
+    assert.equal(sentMail, false)
+    await getDatabase().collection<UserDocument>('users').updateOne(
+      { _id: reservedEmailUserId },
+      { $set: { emailVerifiedAt: new Date() } },
+    )
+  })
+
+  test('requires authentication to change a password', async () => {
+    const response = await fetch(`${baseUrl}/auth/password`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        currentPassword: testPassword,
+        newPassword: 'new-integration-passphrase',
+      }),
+    })
+
+    assert.equal(response.status, 401)
+  })
+
+  test('rejects invalid password-change input', async () => {
+    const response = await fetch(`${baseUrl}/auth/password`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${authenticatedAccessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        currentPassword: testPassword,
+        newPassword: 'too-short',
+      }),
+    })
+
+    assert.equal(response.status, 400)
+    assert.deepEqual(await response.json(), {
+      error: 'Den nye adgangskode skal være mindst 12 og højst 72 bytes',
+    })
+  })
+
+  test('rejects an incorrect current password', async () => {
+    const response = await fetch(`${baseUrl}/auth/password`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${authenticatedAccessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        currentPassword: 'incorrect-current-password',
+        newPassword: 'new-integration-passphrase',
+      }),
+    })
+
+    assert.equal(response.status, 400)
+    assert.deepEqual(await response.json(), {
+      error: 'Den nuværende adgangskode er forkert.',
+    })
+  })
+
+  test('changes the password and allows login only with the new password', async () => {
+    const changeResponse = await fetch(`${baseUrl}/auth/password`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${authenticatedAccessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        currentPassword: testPassword,
+        newPassword: 'new-integration-passphrase',
+      }),
+    })
+
+    assert.equal(changeResponse.status, 200)
+    assert.deepEqual(await changeResponse.json(), {
+      message: 'Adgangskoden er opdateret.',
+    })
+
+    const oldPasswordResponse = await fetch(`${baseUrl}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userName: 'integration.test', password: testPassword }),
+    })
+    assert.equal(oldPasswordResponse.status, 401)
+
+    const newPasswordResponse = await fetch(`${baseUrl}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userName: 'integration.test',
+        password: 'new-integration-passphrase',
+      }),
+    })
+    assert.equal(newPasswordResponse.status, 200)
+  })
+
+  test('resets password with a one-time email token', async () => {
+    await assert.rejects(
+      () => requestPasswordReset('reserved@example.dk', async () => {
+        throw new Error('test SMTP failure')
+      }),
+      /Nulstillingsmailen kunne ikke sendes/,
+    )
+    const userAfterDeliveryFailure = await getDatabase().collection<UserDocument>('users')
+      .findOne({ _id: reservedEmailUserId })
+    assert.equal(userAfterDeliveryFailure?.passwordResetTokenHash, undefined)
+
+    let expiredResetUrl = ''
+    await requestPasswordReset('reserved@example.dk', async (_recipient, url) => {
+      expiredResetUrl = url
+    })
+    const expiredToken = new URL(expiredResetUrl).searchParams.get('token')
+    assert.ok(expiredToken)
+    await getDatabase().collection<UserDocument>('users').updateOne(
+      { _id: reservedEmailUserId },
+      { $set: { passwordResetExpiresAt: new Date(Date.now() - 1000) } },
+    )
+    const expiredResponse = await fetch(`${baseUrl}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: expiredToken, newPassword: 'new-reserved-passphrase' }),
+    })
+    assert.equal(expiredResponse.status, 400)
+
+    let resetUrl = ''
+    await requestPasswordReset('reserved@example.dk', async (_recipient, url) => {
+      resetUrl = url
+    })
+    const token = new URL(resetUrl).searchParams.get('token')
+    assert.ok(token)
+
+    const resetResponse = await fetch(`${baseUrl}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, newPassword: 'new-reserved-passphrase' }),
+    })
+    assert.equal(resetResponse.status, 200)
+    assert.deepEqual(await resetResponse.json(), {
+      message: 'Adgangskoden er nulstillet. Du kan nu logge ind.',
+    })
+
+    const reusedTokenResponse = await fetch(`${baseUrl}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, newPassword: 'another-reserved-passphrase' }),
+    })
+    assert.equal(reusedTokenResponse.status, 400)
+
+    const oldPasswordResponse = await fetch(`${baseUrl}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userName: 'reserved.email', password: testPassword }),
+    })
+    assert.equal(oldPasswordResponse.status, 401)
+
+    const newPasswordResponse = await fetch(`${baseUrl}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userName: 'reserved.email',
+        password: 'new-reserved-passphrase',
+      }),
+    })
+    assert.equal(newPasswordResponse.status, 200)
   })
 })

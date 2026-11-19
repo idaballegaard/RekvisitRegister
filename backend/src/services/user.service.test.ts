@@ -14,6 +14,7 @@ const validInput = {
   firstName: 'Ada',
   lastName: 'Lovelace',
   userName: ' Ada.L ',
+  email: ' Ada@example.dk ',
   password: 'a-long-passphrase',
 }
 
@@ -25,7 +26,19 @@ test('validates bootstrap data and assigns the association admin role', () => {
   const user = validateInitialAdminInput(validInput)
 
   assert.equal(user.userName, 'ada.l')
+  assert.equal(user.email, 'ada@example.dk')
   assert.equal(ROLES.ASSOCIATION_ADMIN, 'associationAdmin')
+})
+
+test('requires a valid email address for the initial admin', () => {
+  assert.throws(
+    () => validateInitialAdminInput({ ...validInput, email: '' }),
+    /email mangler/,
+  )
+  assert.throws(
+    () => validateInitialAdminInput({ ...validInput, email: 'invalid' }),
+    /gyldig e-mailadresse/,
+  )
 })
 
 test('rejects short passwords', () => {

@@ -9,6 +9,7 @@ async function main(): Promise<void> {
     firstName: process.env.INITIAL_ADMIN_FIRST_NAME,
     lastName: process.env.INITIAL_ADMIN_LAST_NAME,
     userName: process.env.INITIAL_ADMIN_USERNAME,
+    email: process.env.INITIAL_ADMIN_EMAIL,
     password: process.env.INITIAL_ADMIN_PASSWORD,
   })
 

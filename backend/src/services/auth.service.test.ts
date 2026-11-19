@@ -28,6 +28,7 @@ describe('authenticateUser', () => {
       firstName: 'Ada',
       lastName: 'Lovelace',
       userName: 'ada.l',
+      email: 'ada@example.dk',
       passwordHash: await hashPassword(password),
       role: 'associationAdmin',
       associationId: new ObjectId(),
