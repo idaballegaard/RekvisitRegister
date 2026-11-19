@@ -8,7 +8,9 @@ import { isValidEmail } from '../services/user.service.ts'
 import {
   changePassword,
   EmailAlreadyInUseError,
+  EmailVerificationDeliveryError,
   IncorrectCurrentPasswordError,
+  InvalidEmailVerificationTokenError,
   InvalidPasswordResetInputError,
   InvalidPasswordResetTokenError,
   InvalidProfileInputError,
@@ -20,15 +22,19 @@ import {
   PasswordResetDeliveryError,
   ProfileUserNotFoundError,
   type ChangePasswordInput,
+  type ConfirmEmailInput,
   type LoginInput,
   type RequestPasswordResetInput,
   type ResetPasswordInput,
   type UpdateProfileInput,
+  confirmEmail,
+  requestEmailVerification,
   requestPasswordReset,
   resetPassword,
   updateProfile,
   validateLoginInput,
   validateChangePasswordInput,
+  validateConfirmEmailInput,
   validateRequestPasswordResetInput,
   validateResetPasswordInput,
   validateUpdateProfileInput,
@@ -94,6 +100,7 @@ export const getCurrentUser: RequestHandler = async (request, response) => {
       lastName: user.lastName,
       userName: user.userName,
       email: user.email,
+      emailVerified: Boolean(user.emailVerifiedAt),
       role: user.role,
       associationId: user.associationId.toHexString(),
       associationName: association.name,
@@ -116,8 +123,11 @@ export const patchProfile: RequestHandler = async (request, response, next) => {
 
   try {
     const user = getAuthenticatedUser(request)
-    await updateProfile(user.userId, input)
-    response.json({ message: 'E-mailadressen er opdateret.' })
+    const updatedProfile = await updateProfile(user.userId, input)
+    response.json({
+      message: 'E-mailadressen er opdateret.',
+      emailVerified: updatedProfile.emailVerified,
+    })
   } catch (error) {
     if (error instanceof EmailAlreadyInUseError) {
       response.status(409).json({ error: 'E-mailadressen er allerede knyttet til en anden bruger.' })
@@ -227,6 +237,68 @@ export const postResetPassword: RequestHandler = async (request, response, next)
     if (error instanceof InvalidPasswordResetTokenError) {
       response.status(400).json({
         error: 'Nulstillingslinket er ugyldigt eller udløbet. Bed om et nyt link.',
+      })
+      return
+    }
+    next(error)
+  }
+}
+
+export const postRequestEmailVerification: RequestHandler = async (
+  request,
+  response,
+  next,
+) => {
+  try {
+    const user = getAuthenticatedUser(request)
+    assertEmailDeliveryConfigured()
+    await requestEmailVerification(user.userId)
+    response.status(202).json({
+      message: 'Hvis e-mailadressen ikke allerede er bekræftet, sender vi et bekræftelseslink.',
+    })
+  } catch (error) {
+    if (error instanceof EmailConfigurationError) {
+      response.status(503).json({
+        error: 'E-mailbekræftelse er ikke konfigureret. Kontakt administratoren.',
+      })
+      return
+    }
+    if (error instanceof EmailVerificationDeliveryError) {
+      response.status(503).json({
+        error: 'Bekræftelsesmailen kunne ikke sendes. Prøv igen senere.',
+      })
+      return
+    }
+    if (error instanceof ProfileUserNotFoundError) {
+      response.status(404).json({ error: 'Brugeren blev ikke fundet.' })
+      return
+    }
+    next(error)
+  }
+}
+
+export const postConfirmEmail: RequestHandler = async (request, response, next) => {
+  let input: ConfirmEmailInput
+  try {
+    input = validateConfirmEmailInput(request.body)
+  } catch (error) {
+    if (error instanceof InvalidEmailVerificationTokenError) {
+      response.status(400).json({
+        error: 'Bekræftelseslinket er ugyldigt eller udløbet. Bed om et nyt link.',
+      })
+      return
+    }
+    next(error)
+    return
+  }
+
+  try {
+    await confirmEmail(input)
+    response.json({ message: 'E-mailadressen er bekræftet.' })
+  } catch (error) {
+    if (error instanceof InvalidEmailVerificationTokenError) {
+      response.status(400).json({
+        error: 'Bekræftelseslinket er ugyldigt eller udløbet. Bed om et nyt link.',
       })
       return
     }

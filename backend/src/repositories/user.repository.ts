@@ -58,6 +58,62 @@ export async function findUserByPasswordResetToken(
   })
 }
 
+export async function storeEmailVerificationToken(
+  userId: ObjectId,
+  tokenHash: string,
+  expiresAt: Date,
+): Promise<boolean> {
+  const result = await getDatabase().collection<UserDocument>('users').updateOne(
+    { _id: userId },
+    { $set: { emailVerificationTokenHash: tokenHash, emailVerificationExpiresAt: expiresAt } },
+  )
+
+  return result.matchedCount === 1
+}
+
+export async function clearEmailVerificationToken(
+  userId: ObjectId,
+  tokenHash: string,
+): Promise<void> {
+  await getDatabase().collection<UserDocument>('users').updateOne(
+    { _id: userId, emailVerificationTokenHash: tokenHash },
+    { $unset: { emailVerificationTokenHash: '', emailVerificationExpiresAt: '' } },
+  )
+}
+
+export async function findUserByEmailVerificationToken(
+  tokenHash: string,
+  now: Date,
+): Promise<WithId<UserDocument> | null> {
+  return getDatabase().collection<UserDocument>('users').findOne({
+    emailVerificationTokenHash: tokenHash,
+    emailVerificationExpiresAt: { $gt: now },
+  })
+}
+
+export async function confirmUserEmail(
+  userId: ObjectId,
+  tokenHash: string,
+  now: Date,
+): Promise<boolean> {
+  const result = await getDatabase().collection<UserDocument>('users').updateOne(
+    {
+      _id: userId,
+      emailVerificationTokenHash: tokenHash,
+      emailVerificationExpiresAt: { $gt: now },
+    },
+    {
+      $set: { emailVerifiedAt: now, updatedAt: now },
+      $unset: {
+        emailVerificationTokenHash: '',
+        emailVerificationExpiresAt: '',
+      },
+    },
+  )
+
+  return result.modifiedCount === 1
+}
+
 export async function updatePasswordWithResetToken(
   userId: ObjectId,
   tokenHash: string,
@@ -98,14 +154,28 @@ export async function updateUserPasswordHash(
 export async function updateUserProfile(
   userId: ObjectId,
   profile: Pick<UserDocument, 'email'>,
+  currentEmail: string,
 ): Promise<boolean> {
-  const result = await getDatabase().collection<UserDocument>('users').updateOne(
-    { _id: userId },
-    {
-      $set: { email: profile.email, updatedAt: new Date() },
-      $unset: { passwordResetTokenHash: '', passwordResetExpiresAt: '' },
-    },
-  )
+  const emailChanged = profile.email !== currentEmail
+  const collection = getDatabase().collection<UserDocument>('users')
+  const result = emailChanged
+    ? await collection.updateOne(
+        { _id: userId, email: currentEmail },
+        {
+          $set: { email: profile.email, updatedAt: new Date() },
+          $unset: {
+            emailVerifiedAt: '',
+            emailVerificationTokenHash: '',
+            emailVerificationExpiresAt: '',
+            passwordResetTokenHash: '',
+            passwordResetExpiresAt: '',
+          },
+        },
+      )
+    : await collection.updateOne(
+        { _id: userId, email: currentEmail },
+        { $set: { email: profile.email, updatedAt: new Date() } },
+      )
 
   return result.matchedCount === 1
 }

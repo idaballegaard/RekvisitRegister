@@ -9,7 +9,7 @@ import { closeDatabase, connectToDatabase, getDatabase } from '../config/databas
 import { ROLES, type UserDocument } from '../models/user.model.ts'
 import type { AssociationDocument } from '../models/association.model.ts'
 import authRouter from '../routes/auth.routes.ts'
-import { requestPasswordReset } from './auth.service.ts'
+import { requestEmailVerification, requestPasswordReset } from './auth.service.ts'
 import { hashPassword } from './user.service.ts'
 
 const testPassword = 'integration-test-passphrase'
@@ -68,6 +68,7 @@ describe('auth endpoints with MongoDB', () => {
       lastName: 'Tester',
       userName: 'integration.test',
       email: testEmail,
+      emailVerifiedAt: new Date(),
       passwordHash: await hashPassword(testPassword),
       role: ROLES.ASSOCIATION_ADMIN,
       associationId: expectedAssociationId,
@@ -81,6 +82,7 @@ describe('auth endpoints with MongoDB', () => {
       lastName: user.lastName,
       userName: 'reserved.email',
       email: 'reserved@example.dk',
+      emailVerifiedAt: new Date(),
       passwordHash: user.passwordHash,
       role: user.role,
       associationId: expectedAssociationId,
@@ -221,6 +223,7 @@ describe('auth endpoints with MongoDB', () => {
       user: {
         ...loginBody.user as object,
         email: testEmail,
+        emailVerified: true,
         associationName: testAssociationName,
       },
     })
@@ -261,16 +264,64 @@ describe('auth endpoints with MongoDB', () => {
     assert.equal(updateResponse.status, 200)
     assert.deepEqual(await updateResponse.json(), {
       message: 'E-mailadressen er opdateret.',
+      emailVerified: false,
     })
 
     const profileResponse = await fetch(`${baseUrl}/auth/me`, {
       headers: { Authorization: `Bearer ${authenticatedAccessToken}` },
     })
-    const profileBody = await profileResponse.json() as { user: { email: string } }
+    const profileBody = await profileResponse.json() as {
+      user: { email: string; emailVerified: boolean }
+    }
     assert.equal(profileBody.user.email, 'new.email@example.dk')
+    assert.equal(profileBody.user.emailVerified, false)
     const reservedUser = await getDatabase().collection<UserDocument>('users')
       .findOne({ _id: reservedEmailUserId })
     assert.equal(reservedUser?.email, 'reserved@example.dk')
+  })
+
+  test('verifies a changed email and rejects replayed verification tokens', async () => {
+    let verificationUrl = ''
+    await requestEmailVerification(expectedUserId, async (_recipient, url) => {
+      verificationUrl = url
+    })
+    const token = new URL(verificationUrl).searchParams.get('token')
+    assert.ok(token)
+
+    const confirmationResponse = await fetch(`${baseUrl}/auth/confirm-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    })
+    assert.equal(confirmationResponse.status, 200)
+
+    const replayResponse = await fetch(`${baseUrl}/auth/confirm-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    })
+    assert.equal(replayResponse.status, 400)
+
+    const user = await getDatabase().collection<UserDocument>('users')
+      .findOne({ _id: new ObjectId(expectedUserId) })
+    assert.ok(user?.emailVerifiedAt)
+    assert.equal(user?.emailVerificationTokenHash, undefined)
+  })
+
+  test('does not send password-reset mail to an unverified email', async () => {
+    let sentMail = false
+    await getDatabase().collection<UserDocument>('users').updateOne(
+      { _id: reservedEmailUserId },
+      { $unset: { emailVerifiedAt: '' } },
+    )
+    await requestPasswordReset('reserved@example.dk', async () => {
+      sentMail = true
+    })
+    assert.equal(sentMail, false)
+    await getDatabase().collection<UserDocument>('users').updateOne(
+      { _id: reservedEmailUserId },
+      { $set: { emailVerifiedAt: new Date() } },
+    )
   })
 
   test('requires authentication to change a password', async () => {

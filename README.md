@@ -61,7 +61,7 @@ Middleware svarer med `401` uden gyldigt login og `403`, hvis brugerens rolle ma
 
 En indlogget bruger kan skifte adgangskode med `PATCH /auth/password`. Kaldet kræver den nuværende adgangskode og en ny adgangskode på 12-72 UTF-8 bytes. JWT-tokenet bliver ikke tilbagekaldt ved skiftet; aktive tokens udløber fortsat efter deres normale 15 minutter.
 
-På login-siden kan brugeren anmode om nulstillingslink via sin e-mailadresse. Linket udløber efter 30 minutter og kan kun bruges én gang. Der sættes en ny adgangskode på 12-72 UTF-8 bytes; allerede udstedte JWT-token udløber fortsat efter deres normale 15 minutter.
+På profilsiden kan brugeren sende et e-mailbekræftelseslink til sin adresse. Først når linket er bekræftet, kan adressen bruges til nulstilling af adgangskode. Eksisterende adresser regnes som ubekræftede, indtil brugeren følger bekræftelseslinket. Bekræftelseslinks udløber efter 24 timer og kan kun bruges én gang. På login-siden kan brugeren derefter anmode om nulstillingslink via sin bekræftede e-mailadresse. Nulstillingslinket udløber efter 30 minutter og kan kun bruges én gang. Der sættes en ny adgangskode på 12-72 UTF-8 bytes; allerede udstedte JWT-token udløber fortsat efter deres normale 15 minutter.
 
 ## Backend med TypeScript
 

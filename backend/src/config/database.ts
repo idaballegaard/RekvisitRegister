@@ -28,6 +28,10 @@ export async function connectToDatabase(): Promise<Db> {
       { passwordResetTokenHash: 1 },
       { unique: true, sparse: true, name: 'unique_password_reset_token_hash' },
     )
+    await users.createIndex(
+      { emailVerificationTokenHash: 1 },
+      { unique: true, sparse: true, name: 'unique_email_verification_token_hash' },
+    )
     try {
       await users.createIndex(
         { email: 1 },

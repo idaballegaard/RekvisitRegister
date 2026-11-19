@@ -35,6 +35,9 @@ export interface UserDocument {
   lastName: string
   userName: string
   email: string
+  emailVerifiedAt?: Date
+  emailVerificationTokenHash?: string
+  emailVerificationExpiresAt?: Date
   passwordHash: string
   passwordResetTokenHash?: string
   passwordResetExpiresAt?: Date

@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import LoginView from '../views/LoginView.vue'
 import ProfileView from '../views/ProfileView.vue'
 import ResetPasswordView from '../views/ResetPasswordView.vue'
+import VerifyEmailView from '../views/VerifyEmailView.vue'
 
 const { routerPush, routerReplace } = vi.hoisted(() => ({
   routerPush: vi.fn(),
@@ -21,6 +22,7 @@ const currentUserResponse = {
     lastName: 'Lovelace',
     userName: 'ada.l',
     email: 'ada@example.dk',
+    emailVerified: true,
     role: 'associationAdmin',
     associationId: 'fedcba9876543210fedcba98',
     associationName: 'Skarntyden',
@@ -201,7 +203,7 @@ describe('ProfileView', () => {
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ))
       .mockResolvedValueOnce(new Response(
-        JSON.stringify({ message: 'E-mailadressen er opdateret.' }),
+        JSON.stringify({ message: 'E-mailadressen er opdateret.', emailVerified: false }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ))
     vi.stubGlobal('fetch', fetchMock)
@@ -214,7 +216,7 @@ describe('ProfileView', () => {
     await wrapper.get('section[aria-labelledby="personal-heading"] form').trigger('submit')
 
     await vi.waitFor(() => {
-      expect(wrapper.get('[role="status"]').text()).toContain('E-mailadressen er opdateret.')
+      expect(wrapper.text()).toContain('E-mailadressen er opdateret.')
     })
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/auth/profile', {
       method: 'PATCH',
@@ -225,6 +227,59 @@ describe('ProfileView', () => {
       body: JSON.stringify({ email: 'new@example.dk' }),
     })
     expect(wrapper.get('input[name="email"]').element).toHaveProperty('value', 'new@example.dk')
+  })
+
+  it('lets an unverified user request a verification email', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({
+          user: {
+            ...currentUserResponse.user,
+            emailVerified: false,
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({ message: 'Bekræftelseslink afsendt.' }),
+        { status: 202, headers: { 'Content-Type': 'application/json' } },
+      ))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(ProfileView)
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('E-mailadressen er ikke bekræftet endnu')
+    })
+    await wrapper.get('button[type="button"]').trigger('click')
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('sender vi et link til din e-mail')
+    })
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/auth/email-verification')
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'POST' })
+  })
+
+  it('only confirms an email after the user clicks the confirmation button', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ message: 'E-mailadressen er bekræftet.' }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(VerifyEmailView)
+
+    expect(wrapper.text()).toContain('Bekræft, at denne e-mailadresse tilhører dig.')
+    expect(fetchMock).not.toHaveBeenCalled()
+    await wrapper.get('button').trigger('click')
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Din e-mailadresse er nu bekræftet.')
+    })
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/confirm-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: 'a'.repeat(64) }),
+    })
   })
 
   it('toggles visibility for the current password', async () => {

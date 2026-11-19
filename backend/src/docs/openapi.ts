@@ -119,6 +119,42 @@ export const openApiDocument = {
                     description: 'Skal være 12-72 UTF-8 bytes.',
                   },
                 },
+                '/auth/email-verification': {
+                  post: {
+                    summary: 'Send bekræftelseslink til den indloggede brugers e-mail',
+                    security: [{ bearerAuth: [] }],
+                    responses: {
+                      '202': { description: 'Et link er sendt, hvis e-mailadressen ikke allerede er bekræftet.' },
+                      '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
+                      '429': { description: 'For mange forsøg.' },
+                      '503': { description: 'Mailafsendelse er ikke konfigureret eller tilgængelig.' },
+                    },
+                  },
+                },
+                '/auth/confirm-email': {
+                  post: {
+                    summary: 'Bekræft e-mailadresse med et engangslink',
+                    requestBody: {
+                      required: true,
+                      content: {
+                        'application/json': {
+                          schema: {
+                            type: 'object',
+                            required: ['token'],
+                            properties: {
+                              token: { type: 'string', minLength: 64, maxLength: 64 },
+                            },
+                          },
+                        },
+                      },
+                    },
+                    responses: {
+                      '200': { description: 'E-mailadressen er bekræftet.' },
+                      '400': { description: 'Bekræftelsestokenet er ugyldigt, brugt eller udløbet.' },
+                      '429': { description: 'For mange forsøg.' },
+                    },
+                  },
+                },
               },
             },
           },

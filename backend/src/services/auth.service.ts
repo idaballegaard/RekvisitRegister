@@ -2,12 +2,16 @@ import { createHash, randomBytes } from 'node:crypto'
 import { MongoServerError, ObjectId, type WithId } from 'mongodb'
 import { ROLES, type UserDocument } from '../models/user.model.ts'
 import {
+  clearEmailVerificationToken,
   clearPasswordResetToken,
+  confirmUserEmail,
   findUserByEmail,
+  findUserByEmailVerificationToken,
   findUserById,
   findUserByPasswordResetToken,
   findUserByUserName,
   storePasswordResetToken,
+  storeEmailVerificationToken,
   updatePasswordWithResetToken,
   updateUserPasswordHash,
   updateUserProfile,
@@ -21,7 +25,9 @@ import {
 } from './user.service.ts'
 import { createAccessToken, type AuthenticatedUser } from './access-token.service.ts'
 import {
+  createEmailVerificationUrl,
   createPasswordResetUrl,
+  sendEmailVerification,
   sendPasswordResetEmail,
 } from './email.service.ts'
 
@@ -41,6 +47,8 @@ export class EmailAlreadyInUseError extends Error {}
 export class InvalidPasswordResetInputError extends Error {}
 export class InvalidPasswordResetTokenError extends Error {}
 export class PasswordResetDeliveryError extends Error {}
+export class EmailVerificationDeliveryError extends Error {}
+export class InvalidEmailVerificationTokenError extends Error {}
 
 export interface ChangePasswordInput {
   currentPassword: string
@@ -58,6 +66,10 @@ export interface RequestPasswordResetInput {
 export interface ResetPasswordInput {
   token: string
   newPassword: string
+}
+
+export interface ConfirmEmailInput {
+  token: string
 }
 
 export function validateLoginInput(input: unknown): LoginInput {
@@ -181,14 +193,19 @@ export function validateUpdateProfileInput(input: unknown): UpdateProfileInput {
 export async function updateProfile(
   userId: string,
   input: UpdateProfileInput,
-): Promise<void> {
+): Promise<{ emailVerified: boolean }> {
   if (!/^[a-f\d]{24}$/i.test(userId)) {
+    throw new ProfileUserNotFoundError()
+  }
+
+  const user = await findUserById(new ObjectId(userId))
+  if (!user) {
     throw new ProfileUserNotFoundError()
   }
 
   let updated: boolean
   try {
-    updated = await updateUserProfile(new ObjectId(userId), input)
+    updated = await updateUserProfile(user._id, input, user.email)
   } catch (error) {
     if (error instanceof MongoServerError && error.code === 11000) {
       throw new EmailAlreadyInUseError()
@@ -197,6 +214,10 @@ export async function updateProfile(
   }
   if (!updated) {
     throw new ProfileUserNotFoundError()
+  }
+
+  return {
+    emailVerified: input.email === user.email && Boolean(user.emailVerifiedAt),
   }
 }
 
@@ -237,8 +258,76 @@ export function validateResetPasswordInput(input: unknown): ResetPasswordInput {
   return { token, newPassword }
 }
 
+export function validateConfirmEmailInput(input: unknown): ConfirmEmailInput {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    throw new InvalidEmailVerificationTokenError()
+  }
+  const { token } = input as Record<string, unknown>
+  if (typeof token !== 'string' || !/^[a-f\d]{64}$/i.test(token)) {
+    throw new InvalidEmailVerificationTokenError()
+  }
+  return { token }
+}
+
 function hashResetToken(token: string): string {
   return createHash('sha256').update(token).digest('hex')
+}
+
+export async function requestEmailVerification(
+  userId: string,
+  sendEmail: (recipient: string, verificationUrl: string) => Promise<void> = sendEmailVerification,
+): Promise<void> {
+  if (!/^[a-f\d]{24}$/i.test(userId)) {
+    throw new ProfileUserNotFoundError()
+  }
+  const user = await findUserById(new ObjectId(userId))
+  if (!user) {
+    throw new ProfileUserNotFoundError()
+  }
+  if (user.emailVerifiedAt) {
+    return
+  }
+
+  const token = randomBytes(32).toString('hex')
+  const tokenHash = hashResetToken(token)
+  const stored = await storeEmailVerificationToken(
+    user._id,
+    tokenHash,
+    new Date(Date.now() + 24 * 60 * 60 * 1000),
+  )
+  if (!stored) {
+    throw new ProfileUserNotFoundError()
+  }
+
+  try {
+    await sendEmail(user.email, createEmailVerificationUrl(token))
+  } catch (error) {
+    try {
+      await clearEmailVerificationToken(user._id, tokenHash)
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        'Bekræftelsesmailen fejlede, og tokenet kunne ikke ryddes fra databasen',
+      )
+    }
+    throw new EmailVerificationDeliveryError('Bekræftelsesmailen kunne ikke sendes', {
+      cause: error,
+    })
+  }
+}
+
+export async function confirmEmail(input: ConfirmEmailInput): Promise<void> {
+  const tokenHash = hashResetToken(input.token)
+  const now = new Date()
+  const user = await findUserByEmailVerificationToken(tokenHash, now)
+  if (!user) {
+    throw new InvalidEmailVerificationTokenError()
+  }
+
+  const verified = await confirmUserEmail(user._id, tokenHash, now)
+  if (!verified) {
+    throw new InvalidEmailVerificationTokenError()
+  }
 }
 
 export async function requestPasswordReset(
@@ -246,7 +335,7 @@ export async function requestPasswordReset(
   sendEmail: (recipient: string, resetUrl: string) => Promise<void> = sendPasswordResetEmail,
 ): Promise<void> {
   const user = await findUserByEmail(email)
-  if (!user) {
+  if (!user || !user.emailVerifiedAt) {
     return
   }
 

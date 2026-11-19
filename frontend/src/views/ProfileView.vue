@@ -5,6 +5,7 @@ import {
   changePassword,
   clearAuthSession,
   getCurrentUser,
+  requestEmailVerification,
   UnauthorizedError,
   updateProfile,
   type CurrentUserProfile,
@@ -21,10 +22,13 @@ const repeatedPasswordVisible = ref(false)
 const profile = ref<CurrentUserProfile | null>(null)
 const isLoading = ref(true)
 const isSavingProfile = ref(false)
+const isRequestingEmailVerification = ref(false)
 const isChangingPassword = ref(false)
 const errorMessage = ref('')
 const profileErrorMessage = ref('')
 const profileSuccessMessage = ref('')
+const emailVerificationErrorMessage = ref('')
+const emailVerificationSuccessMessage = ref('')
 const passwordErrorMessage = ref('')
 const passwordSuccessMessage = ref('')
 const roleNames: Record<CurrentUserProfile['role'], string> = {
@@ -41,11 +45,14 @@ async function logout(): Promise<void> {
 async function submitProfileUpdate(): Promise<void> {
   profileErrorMessage.value = ''
   profileSuccessMessage.value = ''
+  emailVerificationErrorMessage.value = ''
+  emailVerificationSuccessMessage.value = ''
   isSavingProfile.value = true
   try {
-    await updateProfile(email.value)
+    const updatedProfile = await updateProfile(email.value)
     if (profile.value) {
       profile.value.email = email.value.trim().toLowerCase()
+      profile.value.emailVerified = updatedProfile.emailVerified
     }
     profileSuccessMessage.value = 'E-mailadressen er opdateret.'
   } catch (error) {
@@ -58,6 +65,27 @@ async function submitProfileUpdate(): Promise<void> {
       : 'E-mailadressen kunne ikke opdateres.'
   } finally {
     isSavingProfile.value = false
+  }
+}
+
+async function submitEmailVerificationRequest(): Promise<void> {
+  emailVerificationErrorMessage.value = ''
+  emailVerificationSuccessMessage.value = ''
+  isRequestingEmailVerification.value = true
+  try {
+    await requestEmailVerification()
+    emailVerificationSuccessMessage.value =
+      'Hvis adressen ikke allerede er bekræftet, sender vi et link til din e-mail.'
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      await router.replace({ name: 'login' })
+      return
+    }
+    emailVerificationErrorMessage.value = error instanceof Error
+      ? error.message
+      : 'Bekræftelsesmailen kunne ikke sendes.'
+  } finally {
+    isRequestingEmailVerification.value = false
   }
 }
 
@@ -178,6 +206,32 @@ onMounted(async () => {
             </p>
             <p v-if="profileSuccessMessage" class="mt-3 text-xs text-green-700" role="status">
               {{ profileSuccessMessage }}
+            </p>
+            <p
+              v-if="profile && !profile.emailVerified"
+              class="mt-3 text-xs text-gray-medium"
+              role="status"
+            >
+              E-mailadressen er ikke bekræftet endnu og kan derfor ikke bruges til nulstilling af adgangskode.
+            </p>
+            <button
+              v-if="profile && !profile.emailVerified"
+              class="mt-3 h-[35px] w-fit rounded-[4px] border border-brand bg-white px-[14px] text-xs text-brand hover:bg-[#f5eded] disabled:cursor-not-allowed disabled:opacity-60"
+              type="button"
+              :disabled="isRequestingEmailVerification"
+              @click="submitEmailVerificationRequest"
+            >
+              {{ isRequestingEmailVerification ? 'Sender…' : 'Bekræft e-mailadresse' }}
+            </button>
+            <p
+              v-if="emailVerificationSuccessMessage"
+              class="mt-2 text-xs text-green-700"
+              role="status"
+            >
+              {{ emailVerificationSuccessMessage }}
+            </p>
+            <p v-if="emailVerificationErrorMessage" class="mt-2 text-xs text-brand" role="alert">
+              {{ emailVerificationErrorMessage }}
             </p>
             <button
               class="mt-[17px] h-[35px] w-fit rounded-[4px] border-0 bg-brand px-[14px] text-xs text-white hover:bg-[#7d0202] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-60"

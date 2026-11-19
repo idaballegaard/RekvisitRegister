@@ -4,7 +4,9 @@ import {
   getCurrentUser,
   patchPassword,
   patchProfile,
+  postConfirmEmail,
   postForgotPassword,
+  postRequestEmailVerification,
   postLogin,
   postResetPassword,
 } from '../controllers/auth.controller.ts'
@@ -38,10 +40,30 @@ const passwordResetCompletionRateLimit = rateLimit({
     response.status(429).json({ error: 'For mange forsøg. Prøv igen senere.' })
   },
 })
+const emailVerificationRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_request, response) => {
+    response.status(429).json({ error: 'For mange forsøg. Prøv igen senere.' })
+  },
+})
 
 authRouter.post('/auth/login', loginRateLimit, postLogin)
 authRouter.post('/auth/forgot-password', passwordResetRequestRateLimit, postForgotPassword)
 authRouter.post('/auth/reset-password', passwordResetCompletionRateLimit, postResetPassword)
+authRouter.post(
+  '/auth/email-verification',
+  requireAuthentication,
+  emailVerificationRateLimit,
+  postRequestEmailVerification,
+)
+authRouter.post(
+  '/auth/confirm-email',
+  emailVerificationRateLimit,
+  postConfirmEmail,
+)
 authRouter.get('/auth/me', requireAuthentication, getCurrentUser)
 authRouter.patch('/auth/profile', requireAuthentication, patchProfile)
 authRouter.patch('/auth/password', requireAuthentication, patchPassword)

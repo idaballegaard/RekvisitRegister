@@ -62,7 +62,19 @@ export function createPasswordResetUrl(token: string): string {
   return url.toString()
 }
 
-export async function sendPasswordResetEmail(email: string, resetUrl: string): Promise<void> {
+export function createEmailVerificationUrl(token: string): string {
+  const { frontendBaseUrl } = getSmtpConfiguration()
+  const url = new URL('/verify-email', frontendBaseUrl)
+  url.searchParams.set('token', token)
+  return url.toString()
+}
+
+async function sendEmail(options: {
+  to: string
+  subject: string
+  text: string
+  html: string
+}): Promise<void> {
   const configuration = getSmtpConfiguration()
   const transporter = nodemailer.createTransport({
     host: configuration.host,
@@ -75,20 +87,34 @@ export async function sendPasswordResetEmail(email: string, resetUrl: string): P
   })
 
   try {
-    await transporter.sendMail({
-      from: configuration.from,
-      to: email,
-      subject: 'Nulstil din adgangskode til Rekvisit Register',
-      text: [
-        'Vi har modtaget en anmodning om at nulstille adgangskoden til din konto.',
-        `Brug dette link inden for 30 minutter: ${resetUrl}`,
-        'Hvis du ikke har bedt om nulstillingen, kan du ignorere denne e-mail.',
-      ].join('\n\n'),
-      html: `<p>Vi har modtaget en anmodning om at nulstille adgangskoden til din konto.</p><p><a href="${resetUrl}">Vælg en ny adgangskode</a></p><p>Linket udløber om 30 minutter. Hvis du ikke har bedt om nulstillingen, kan du ignorere denne e-mail.</p>`,
-    })
+    await transporter.sendMail({ from: configuration.from, ...options })
   } catch (error) {
-    throw new EmailDeliveryError('SMTP-serveren kunne ikke sende nulstillingsmailen', {
-      cause: error,
-    })
+    throw new EmailDeliveryError('SMTP-serveren kunne ikke sende e-mailen', { cause: error })
   }
+}
+
+export async function sendPasswordResetEmail(email: string, resetUrl: string): Promise<void> {
+  await sendEmail({
+    to: email,
+    subject: 'Nulstil din adgangskode til Rekvisit Register',
+    text: [
+      'Vi har modtaget en anmodning om at nulstille adgangskoden til din konto.',
+      `Brug dette link inden for 30 minutter: ${resetUrl}`,
+      'Hvis du ikke har bedt om nulstillingen, kan du ignorere denne e-mail.',
+    ].join('\n\n'),
+    html: `<p>Vi har modtaget en anmodning om at nulstille adgangskoden til din konto.</p><p><a href="${resetUrl}">Vælg en ny adgangskode</a></p><p>Linket udløber om 30 minutter. Hvis du ikke har bedt om nulstillingen, kan du ignorere denne e-mail.</p>`,
+  })
+}
+
+export async function sendEmailVerification(email: string, verificationUrl: string): Promise<void> {
+  await sendEmail({
+    to: email,
+    subject: 'Bekræft din e-mail til Rekvisit Register',
+    text: [
+      'Bekræft, at denne e-mailadresse tilhører dig.',
+      `Brug dette link inden for 24 timer: ${verificationUrl}`,
+      'Hvis du ikke har bedt om bekræftelse, kan du ignorere denne e-mail.',
+    ].join('\n\n'),
+    html: `<p>Bekræft, at denne e-mailadresse tilhører dig.</p><p><a href="${verificationUrl}">Bekræft e-mailadresse</a></p><p>Linket udløber om 24 timer. Hvis du ikke har bedt om bekræftelse, kan du ignorere denne e-mail.</p>`,
+  })
 }

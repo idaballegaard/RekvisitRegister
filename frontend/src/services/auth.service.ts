@@ -9,6 +9,7 @@ export interface AuthenticatedUser {
 
 export interface CurrentUserProfile extends AuthenticatedUser {
   email: string
+  emailVerified: boolean
   associationName: string
 }
 
@@ -57,6 +58,8 @@ function isCurrentUserProfile(value: unknown): value is CurrentUserProfile {
   return isAuthenticatedUser(value)
     && 'email' in value
     && typeof value.email === 'string'
+    && 'emailVerified' in value
+    && typeof value.emailVerified === 'boolean'
     && 'associationName' in value
     && typeof value.associationName === 'string'
 }
@@ -233,7 +236,7 @@ export async function changePassword(credentials: ChangePasswordCredentials): Pr
   }
 }
 
-export async function updateProfile(email: string): Promise<void> {
+export async function updateProfile(email: string): Promise<{ emailVerified: boolean }> {
   const accessToken = sessionStorage.getItem(ACCESS_TOKEN_KEY)
   if (!accessToken) {
     throw new UnauthorizedError('Du er ikke logget ind.')
@@ -282,9 +285,58 @@ export async function updateProfile(email: string): Promise<void> {
     || body === null
     || !('message' in body)
     || typeof body.message !== 'string'
+    || !('emailVerified' in body)
+    || typeof body.emailVerified !== 'boolean'
   ) {
     throw new Error('Serveren returnerede et ugyldigt svar.')
   }
+  return { emailVerified: body.emailVerified }
+}
+
+export async function requestEmailVerification(): Promise<void> {
+  const accessToken = sessionStorage.getItem(ACCESS_TOKEN_KEY)
+  if (!accessToken) {
+    throw new UnauthorizedError('Du er ikke logget ind.')
+  }
+
+  let response: Response
+  try {
+    response = await fetch('/api/auth/email-verification', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+  } catch {
+    throw new Error('Kunne ikke kontakte serveren. Kontrollér, at backend kører.')
+  }
+
+  const body: unknown = await parseResponseBody(response)
+  if (response.status === 401) {
+    clearAuthSession()
+    throw new UnauthorizedError('Dit login er udløbet. Log ind igen.')
+  }
+  if (!response.ok) {
+    throw responseError(body, `Bekræftelsesmailen kunne ikke sendes (HTTP ${response.status}).`)
+  }
+  requireResponseMessage(body)
+}
+
+export async function confirmEmail(token: string): Promise<void> {
+  let response: Response
+  try {
+    response = await fetch('/api/auth/confirm-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    })
+  } catch {
+    throw new Error('Kunne ikke kontakte serveren. Kontrollér, at backend kører.')
+  }
+
+  const body: unknown = await parseResponseBody(response)
+  if (!response.ok) {
+    throw responseError(body, `E-mailadressen kunne ikke bekræftes (HTTP ${response.status}).`)
+  }
+  requireResponseMessage(body)
 }
 
 export async function requestPasswordReset(email: string): Promise<void> {
