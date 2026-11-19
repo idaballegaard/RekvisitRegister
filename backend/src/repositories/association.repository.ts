@@ -24,3 +24,23 @@ export async function findAssociationById(
     .collection<AssociationDocument>('associations')
     .findOne({ _id: associationId })
 }
+
+export async function updateAssociationById(
+  associationId: ObjectId,
+  association: Pick<AssociationDocument, 'name' | 'contactPerson'>,
+): Promise<boolean> {
+  const result = await getDatabase()
+    .collection<AssociationDocument>('associations')
+    .updateOne(
+      { _id: associationId },
+      {
+        $set: {
+          name: association.name,
+          contactPerson: association.contactPerson,
+          updatedAt: new Date(),
+        },
+      },
+    )
+
+  return result.matchedCount === 1
+}

@@ -15,6 +15,13 @@ describe('router authentication guard', () => {
     expect(router.currentRoute.value.query.redirect).toBe('/profile')
   })
 
+  it('redirects to login when the admin panel has no access token', async () => {
+    await router.push('/admin')
+
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(router.currentRoute.value.query.redirect).toBe('/admin')
+  })
+
   it('allows profile navigation when an access token is present', async () => {
     sessionStorage.setItem('rekvisit-register.access-token', 'test-token')
     await router.push('/profile')

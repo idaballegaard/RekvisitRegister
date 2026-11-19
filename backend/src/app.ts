@@ -3,6 +3,7 @@ import express from 'express'
 import swaggerUi from 'swagger-ui-express'
 import { closeDatabase, connectToDatabase } from './config/database.ts'
 import { openApiDocument } from './docs/openapi.ts'
+import associationRouter from './routes/association.routes.ts'
 import authRouter from './routes/auth.routes.ts'
 import healthRouter from './routes/health.routes.ts'
 import { getAccessTokenKey } from './services/access-token.service.ts'
@@ -15,6 +16,7 @@ app.get('/', (_request, response) => {
   response.send('Hej fra Express!')
 })
 app.use(healthRouter)
+app.use(associationRouter)
 app.use(authRouter)
 if (process.env.NODE_ENV !== 'production') {
   app.use('/api-docs', ...swaggerUi.serve, swaggerUi.setup(openApiDocument))

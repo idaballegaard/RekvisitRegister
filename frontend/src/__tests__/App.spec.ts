@@ -1,5 +1,6 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import AdminView from '../views/AdminView.vue'
 import LoginView from '../views/LoginView.vue'
 import ProfileView from '../views/ProfileView.vue'
 import ResetPasswordView from '../views/ResetPasswordView.vue'
@@ -11,6 +12,7 @@ const { routerPush, routerReplace } = vi.hoisted(() => ({
 }))
 
 vi.mock('vue-router', () => ({
+  RouterLink: { template: '<a><slot /></a>' },
   useRouter: () => ({ push: routerPush, replace: routerReplace }),
   useRoute: () => ({ query: { token: 'a'.repeat(64) } }),
 }))
@@ -26,6 +28,17 @@ const currentUserResponse = {
     role: 'associationAdmin',
     associationId: 'fedcba9876543210fedcba98',
     associationName: 'Skarntyden',
+  },
+}
+
+const associationResponse = {
+  association: {
+    name: 'Skarntyden',
+    contactPerson: {
+      name: 'Thomas Boulund Meng Hansen',
+      email: 'thomas@eatskarntyden.dk',
+      phone: '+45 60409598',
+    },
   },
 }
 
@@ -125,6 +138,121 @@ describe('LoginView', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'ada@example.dk' }),
+    })
+  })
+})
+
+describe('AdminView', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    routerReplace.mockReset()
+    sessionStorage.clear()
+  })
+
+  it('shows general association details and empty warehouse state', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(currentUserResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(associationResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Skarntyden')
+    })
+    expect(wrapper.text()).toContain('Adminpanel')
+    expect(wrapper.text()).toContain('Generelt')
+    expect(wrapper.text()).toContain('Foreningens oplysninger')
+    expect(wrapper.text()).toContain('Kontaktpersoner')
+    expect(wrapper.text()).toContain('Thomas Boulund Meng Hansen')
+    expect(wrapper.text()).toContain('thomas@eatskarntyden.dk')
+    expect(wrapper.text()).not.toContain('Ada Lovelace')
+    expect(wrapper.text()).not.toContain('ada@example.dk')
+    expect(wrapper.text()).toContain('Lageradresser')
+    expect(wrapper.text()).toContain('Der er endnu ikke tilføjet nogen lageradresser.')
+    expect(wrapper.find('button:disabled').exists()).toBe(true)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/auth/me')
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      headers: { Authorization: expect.stringMatching(/^Bearer /) },
+    })
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/associations/current')
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'GET' })
+  })
+
+  it('lets an association admin edit the association and its general contact person', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(currentUserResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(associationResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({
+          association: {
+            name: 'Skarntyden Theatre',
+            contactPerson: {
+              name: 'Updated Contact',
+              email: 'updated@example.dk',
+              phone: '+45 12345678',
+            },
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Thomas Boulund Meng Hansen')
+    })
+    await wrapper.get('section[aria-labelledby="association-heading"] button').trigger('click')
+    await wrapper.get('input[name="associationName"]').setValue('Skarntyden Theatre')
+    await wrapper.get('input[name="contactName"]').setValue('Updated Contact')
+    await wrapper.get('input[name="contactEmail"]').setValue('updated@example.dk')
+    await wrapper.get('input[name="contactPhone"]').setValue('+45 12345678')
+    await wrapper.get('#generelt').trigger('submit')
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Foreningens oplysninger er opdateret.')
+    })
+    expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/associations/current')
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
+      method: 'PATCH',
+      body: JSON.stringify({
+        name: 'Skarntyden Theatre',
+        contactPerson: {
+          name: 'Updated Contact',
+          email: 'updated@example.dk',
+          phone: '+45 12345678',
+        },
+      }),
+    })
+    expect(wrapper.text()).toContain('Updated Contact')
+  })
+
+  it('redirects users who are not association admins', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({
+        user: { ...currentUserResponse.user, role: 'propManager' },
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    mount(AdminView)
+
+    await vi.waitFor(() => {
+      expect(routerReplace).toHaveBeenCalledWith({ name: 'profile' })
     })
   })
 })

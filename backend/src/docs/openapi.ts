@@ -190,6 +190,52 @@ export const openApiDocument = {
         },
       },
     },
+    '/associations/current': {
+      get: {
+        summary: 'Hent oplysninger om den indloggede brugers forening',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': { description: 'Foreningens navn og kontaktperson.' },
+          '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
+          '404': { description: 'Foreningen blev ikke fundet.' },
+        },
+      },
+      patch: {
+        summary: 'Opdatér foreningens navn og overordnede kontaktperson',
+        description: 'Kræver rollen associationAdmin.',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['name', 'contactPerson'],
+                properties: {
+                  name: { type: 'string', maxLength: 120 },
+                  contactPerson: {
+                    type: 'object',
+                    required: ['name', 'email', 'phone'],
+                    properties: {
+                      name: { type: 'string', maxLength: 120 },
+                      email: { type: 'string', format: 'email', maxLength: 254 },
+                      phone: { type: 'string', maxLength: 50 },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Foreningens oplysninger blev opdateret.' },
+          '400': { description: 'Foreningsoplysningerne er ugyldige.' },
+          '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
+          '403': { description: 'Kun foreningsansvarlige må ændre oplysningerne.' },
+          '404': { description: 'Foreningen blev ikke fundet.' },
+        },
+      },
+    },
     '/auth/profile': {
       patch: {
         summary: 'Opdatér e-mailadressen for den indloggede bruger',

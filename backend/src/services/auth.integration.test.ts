@@ -8,6 +8,7 @@ import test, { after, before, describe } from 'node:test'
 import { closeDatabase, connectToDatabase, getDatabase } from '../config/database.ts'
 import { ROLES, type UserDocument } from '../models/user.model.ts'
 import type { AssociationDocument } from '../models/association.model.ts'
+import associationRouter from '../routes/association.routes.ts'
 import authRouter from '../routes/auth.routes.ts'
 import { requestEmailVerification, requestPasswordReset } from './auth.service.ts'
 import { hashPassword } from './user.service.ts'
@@ -38,6 +39,7 @@ let expectedAssociationId: ObjectId
 let expectedUserId: string
 let reservedEmailUserId: ObjectId
 let authenticatedAccessToken: string
+let associationManagerAccessToken: string
 
 describe('auth endpoints with MongoDB', () => {
   before(async () => {
@@ -58,6 +60,11 @@ describe('auth endpoints with MongoDB', () => {
     expectedAssociationId = new ObjectId()
     const association: AssociationDocument = {
       name: testAssociationName,
+      contactPerson: {
+        name: 'Association Contact',
+        email: 'contact@example.dk',
+        phone: '+45 12345678',
+      },
       createdAt: new Date(),
       updatedAt: new Date(),
     }
@@ -92,9 +99,21 @@ describe('auth endpoints with MongoDB', () => {
     const reservedUserResult = await getDatabase().collection<UserDocument>('users')
       .insertOne(reservedEmailUser)
     reservedEmailUserId = reservedUserResult.insertedId
+    await getDatabase().collection<UserDocument>('users').insertOne({
+      firstName: 'Integration',
+      lastName: 'Manager',
+      userName: 'integration.manager',
+      email: 'manager@example.dk',
+      passwordHash: user.passwordHash,
+      role: ROLES.PROP_MANAGER,
+      associationId: expectedAssociationId,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    })
 
     const app = express()
     app.use(express.json())
+    app.use(associationRouter)
     app.use(authRouter)
 
     httpServer = app.listen(0)
@@ -202,7 +221,7 @@ describe('auth endpoints with MongoDB', () => {
     })
   })
 
-  test('requires a valid token for the current-user endpoint', async () => {
+  test('requires authentication and limits association updates to association admins', async () => {
     const unauthenticatedResponse = await fetch(`${baseUrl}/auth/me`)
     assert.equal(unauthenticatedResponse.status, 401)
 
@@ -217,6 +236,86 @@ describe('auth endpoints with MongoDB', () => {
     const authenticatedResponse = await fetch(`${baseUrl}/auth/me`, {
       headers: { Authorization: `Bearer ${loginBody.accessToken}` },
     })
+
+    {
+      const getResponse = await fetch(`${baseUrl}/associations/current`, {
+        headers: { Authorization: 'Bearer ' + authenticatedAccessToken },
+      })
+      assert.equal(getResponse.status, 200)
+      assert.deepEqual(await getResponse.json(), {
+        association: {
+          name: testAssociationName,
+          contactPerson: {
+            name: 'Association Contact',
+            email: 'contact@example.dk',
+            phone: '+45 12345678',
+          },
+        },
+      })
+
+      const invalidUpdateResponse = await fetch(`${baseUrl}/associations/current`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: 'Bearer ' + authenticatedAccessToken,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: testAssociationName,
+          contactPerson: {
+            name: 'Association Contact',
+            email: 'not-an-email',
+            phone: '+45 12345678',
+          },
+        }),
+      })
+      assert.equal(invalidUpdateResponse.status, 400)
+
+      const updateInput = {
+        name: testAssociationName,
+        contactPerson: {
+          name: 'Updated Association Contact',
+          email: 'updated.contact@example.dk',
+          phone: '+45 60409598',
+        },
+      }
+      const updateResponse = await fetch(`${baseUrl}/associations/current`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: 'Bearer ' + authenticatedAccessToken,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updateInput),
+      })
+      assert.equal(updateResponse.status, 200)
+      assert.deepEqual(await updateResponse.json(), {
+        message: 'Foreningens oplysninger er opdateret.',
+        association: updateInput,
+      })
+
+      const managerLoginResponse = await fetch(`${baseUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userName: 'integration.manager', password: testPassword }),
+      })
+      assert.equal(managerLoginResponse.status, 200)
+      const managerLoginBody = await managerLoginResponse.json() as { accessToken: string }
+      associationManagerAccessToken = managerLoginBody.accessToken
+
+      const forbiddenUpdateResponse = await fetch(`${baseUrl}/associations/current`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: 'Bearer ' + associationManagerAccessToken,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updateInput),
+      })
+      assert.equal(forbiddenUpdateResponse.status, 403)
+
+      const persistedAssociation = await getDatabase()
+        .collection<AssociationDocument>('associations')
+        .findOne({ _id: expectedAssociationId })
+      assert.deepEqual(persistedAssociation?.contactPerson, updateInput.contactPerson)
+    }
 
     assert.equal(authenticatedResponse.status, 200)
     assert.deepEqual(await authenticatedResponse.json(), {
