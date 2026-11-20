@@ -180,12 +180,30 @@ describe('AdminView', () => {
     await vi.waitFor(() => {
       expect(wrapper.text()).toContain('Skarntyden')
     })
+    expect(wrapper.get('main').classes()).toContain('mx-auto')
+    expect(wrapper.get('main').classes()).toContain('max-w-[1250px]')
     expect(wrapper.text()).toContain('Adminpanel')
+    expect(wrapper.get('h1').classes()).toContain('text-4xl')
+    expect(wrapper.get('header > div > div > p').classes()).toContain('text-base')
     expect(wrapper.text()).toContain('Generelt')
-    expect(wrapper.text()).toContain('Foreningens oplysninger')
-    expect(wrapper.text()).toContain('Kontaktpersoner')
+    expect(wrapper.text()).toContain('Kontaktoplysninger')
+    expect(wrapper.text()).not.toContain('Foreningens oplysninger')
+    expect(wrapper.text()).not.toContain('Administrér brugere')
+    expect(wrapper.get('#contacts-heading').classes()).toContain('text-2xl')
+    expect(wrapper.get('#warehouses-heading').classes()).toContain('text-2xl')
+    expect(
+      wrapper.get('section[aria-labelledby="contacts-heading"] > div').classes(),
+    ).toContain('justify-between')
+    expect(wrapper.get('section[aria-labelledby="warehouses-heading"] > div').classes())
+      .toContain('justify-between')
+    expect(wrapper.get('section[aria-labelledby="contacts-heading"] dl').classes())
+      .toContain('grid-cols-[7fr_6fr_4fr]')
     expect(wrapper.text()).toContain('Thomas Boulund Meng Hansen')
     expect(wrapper.text()).toContain('thomas@eatskarntyden.dk')
+    expect(wrapper.get('section[aria-labelledby="contacts-heading"]').text())
+      .toContain('thomas@eatskarntyden.dk')
+    expect(wrapper.get('section[aria-labelledby="contacts-heading"]').text())
+      .toContain('+45 60409598')
     expect(wrapper.text()).not.toContain('Ada Lovelace')
     expect(wrapper.text()).not.toContain('ada@example.dk')
     expect(wrapper.text()).toContain('Lageradresser')
@@ -194,9 +212,16 @@ describe('AdminView', () => {
     expect(wrapper.text()).toContain('Teatergade 2')
     expect(wrapper.text()).toContain('6700 Esbjerg')
     expect(wrapper.findAll('[aria-label="Foreningens lageradresser"] li')).toHaveLength(2)
+    expect(
+      wrapper.get('[aria-label="Foreningens lageradresser"] li p').classes(),
+    ).toContain('text-lg')
+    expect(
+      wrapper.get('[aria-label="Foreningens lageradresser"] li > div').classes(),
+    ).toContain('flex-1')
     expect(wrapper.findAll('button').some((button) => (
       button.text().includes('Tilføj lager') && !button.attributes('disabled')
     ))).toBe(true)
+    expect(wrapper.get('button[aria-label="Log ud"]').classes()).toContain('bg-brand')
     expect(wrapper.find('button:disabled').exists()).toBe(true)
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/auth/me')
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
@@ -304,6 +329,12 @@ describe('AdminView', () => {
       expect(wrapper.text()).toContain('Industrivej 7')
     })
     const firstLocation = wrapper.get('[aria-label="Foreningens lageradresser"] li')
+    expect(firstLocation.get('button').classes()).toContain('text-brand')
+    expect(firstLocation.get('button').classes()).toContain('underline')
+    expect(firstLocation.get('button').classes()).toContain('cursor-pointer')
+    expect(firstLocation.get('button:last-child').classes()).toContain('text-brand')
+    expect(firstLocation.get('button:last-child').classes()).toContain('underline')
+    expect(firstLocation.get('button:last-child').classes()).toContain('cursor-pointer')
     await firstLocation.get('button').trigger('click')
     await firstLocation.get('input[name="editAddress"]').setValue('Industrivej 9')
     await firstLocation.get('form').trigger('submit')
@@ -408,7 +439,10 @@ describe('AdminView', () => {
     await vi.waitFor(() => {
       expect(wrapper.text()).toContain('Thomas Boulund Meng Hansen')
     })
-    await wrapper.get('section[aria-labelledby="association-heading"] button').trigger('click')
+    expect(
+      wrapper.get('section[aria-labelledby="contacts-heading"] button').classes(),
+    ).toContain('underline')
+    await wrapper.get('section[aria-labelledby="contacts-heading"] button').trigger('click')
     await wrapper.get('input[name="associationName"]').setValue('Skarntyden Theatre')
     await wrapper.get('input[name="contactName"]').setValue('Updated Contact')
     await wrapper.get('input[name="contactEmail"]').setValue('updated@example.dk')
