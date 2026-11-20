@@ -2,6 +2,7 @@ import type { RequestHandler } from 'express'
 import { getAuthenticatedUser } from '../middleware/auth.middleware.ts'
 import {
   AssociationNotFoundError,
+  AssociationStorageLocationsError,
   InvalidAssociationInputError,
   getAssociationProfile,
   updateAssociationProfile,
@@ -16,6 +17,10 @@ export const getCurrentAssociation: RequestHandler = async (request, response, n
   } catch (error) {
     if (error instanceof AssociationNotFoundError) {
       response.status(404).json({ error: 'Foreningen blev ikke fundet.' })
+      return
+    }
+    if (error instanceof AssociationStorageLocationsError) {
+      response.status(500).json({ error: 'En eller flere lageradresser kunne ikke hentes.' })
       return
     }
     next(error)
@@ -45,6 +50,10 @@ export const patchCurrentAssociation: RequestHandler = async (request, response,
   } catch (error) {
     if (error instanceof AssociationNotFoundError) {
       response.status(404).json({ error: 'Foreningen blev ikke fundet.' })
+      return
+    }
+    if (error instanceof AssociationStorageLocationsError) {
+      response.status(500).json({ error: 'En eller flere lageradresser kunne ikke hentes.' })
       return
     }
     next(error)

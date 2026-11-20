@@ -6,6 +6,7 @@ import { ObjectId } from 'mongodb'
 import type { Server } from 'node:http'
 import test, { after, before, describe } from 'node:test'
 import { closeDatabase, connectToDatabase, getDatabase } from '../config/database.ts'
+import type { StorageLocationDocument } from '../models/storage-location.model.ts'
 import { ROLES, type UserDocument } from '../models/user.model.ts'
 import type { AssociationDocument } from '../models/association.model.ts'
 import associationRouter from '../routes/association.routes.ts'
@@ -36,6 +37,7 @@ let mongoServer: MongoMemoryServer | undefined
 let httpServer: Server | undefined
 let baseUrl: string
 let expectedAssociationId: ObjectId
+let storageLocationIds: [ObjectId, ObjectId]
 let expectedUserId: string
 let reservedEmailUserId: ObjectId
 let authenticatedAccessToken: string
@@ -58,8 +60,20 @@ describe('auth endpoints with MongoDB', () => {
 
     await connectToDatabase()
     expectedAssociationId = new ObjectId()
+    storageLocationIds = [new ObjectId(), new ObjectId()]
+    const storageLocations: StorageLocationDocument[] = [
+      { address: 'Industrivej 7', postalCode: '6740', city: 'Bramming' },
+      { address: 'Teatergade 2', postalCode: '6700', city: 'Esbjerg' },
+    ]
+    await getDatabase().collection<StorageLocationDocument>('storagelocation').insertMany(
+      storageLocations.map((location, index) => ({
+        _id: storageLocationIds[index],
+        ...location,
+      })),
+    )
     const association: AssociationDocument = {
       name: testAssociationName,
+      storageLocationIds,
       contactPerson: {
         name: 'Association Contact',
         email: 'contact@example.dk',
@@ -250,6 +264,20 @@ describe('auth endpoints with MongoDB', () => {
             email: 'contact@example.dk',
             phone: '+45 12345678',
           },
+          storageLocations: [
+            {
+              id: storageLocationIds[0]?.toHexString(),
+              address: 'Industrivej 7',
+              postalCode: '6740',
+              city: 'Bramming',
+            },
+            {
+              id: storageLocationIds[1]?.toHexString(),
+              address: 'Teatergade 2',
+              postalCode: '6700',
+              city: 'Esbjerg',
+            },
+          ],
         },
       })
 
@@ -289,7 +317,23 @@ describe('auth endpoints with MongoDB', () => {
       assert.equal(updateResponse.status, 200)
       assert.deepEqual(await updateResponse.json(), {
         message: 'Foreningens oplysninger er opdateret.',
-        association: updateInput,
+        association: {
+          ...updateInput,
+          storageLocations: [
+            {
+              id: storageLocationIds[0]?.toHexString(),
+              address: 'Industrivej 7',
+              postalCode: '6740',
+              city: 'Bramming',
+            },
+            {
+              id: storageLocationIds[1]?.toHexString(),
+              address: 'Teatergade 2',
+              postalCode: '6700',
+              city: 'Esbjerg',
+            },
+          ],
+        },
       })
 
       const managerLoginResponse = await fetch(`${baseUrl}/auth/login`, {

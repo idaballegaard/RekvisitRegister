@@ -195,7 +195,20 @@ export const openApiDocument = {
         summary: 'Hent oplysninger om den indloggede brugers forening',
         security: [{ bearerAuth: [] }],
         responses: {
-          '200': { description: 'Foreningens navn og kontaktperson.' },
+          '200': {
+            description: 'Foreningens oplysninger og alle tilknyttede lageradresser.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['association'],
+                  properties: {
+                    association: { $ref: '#/components/schemas/AssociationProfile' },
+                  },
+                },
+              },
+            },
+          },
           '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
           '404': { description: 'Foreningen blev ikke fundet.' },
         },
@@ -329,6 +342,38 @@ export const openApiDocument = {
           },
           associationId: { type: 'string', example: 'fedcba9876543210fedcba98' },
           associationName: { type: 'string', example: 'Skarntyden' },
+        },
+      },
+      AssociationProfile: {
+        type: 'object',
+        required: ['name', 'contactPerson', 'storageLocations'],
+        properties: {
+          name: { type: 'string', example: 'Esbjerg Amatør Teater Skantryden' },
+          contactPerson: {
+            type: 'object',
+            nullable: true,
+            description: 'Foreningens overordnede kontaktperson.',
+            required: ['name', 'email', 'phone'],
+            properties: {
+              name: { type: 'string', example: 'Thomas Boulund Meng Hansen' },
+              email: { type: 'string', format: 'email', example: 'thomas@example.dk' },
+              phone: { type: 'string', example: '+45 60409598' },
+            },
+          },
+          storageLocations: {
+            type: 'array',
+            description: 'Alle lageradresser refereret af storageLocationIds.',
+            items: {
+              type: 'object',
+              required: ['id', 'address', 'postalCode', 'city'],
+              properties: {
+                id: { type: 'string', example: '6afebf6344bf850bfc30a250' },
+                address: { type: 'string', example: 'Industrivej 7' },
+                postalCode: { type: 'string', example: '6740' },
+                city: { type: 'string', example: 'Bramming' },
+              },
+            },
+          },
         },
       },
     },

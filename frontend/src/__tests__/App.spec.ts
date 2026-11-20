@@ -39,6 +39,20 @@ const associationResponse = {
       email: 'thomas@eatskarntyden.dk',
       phone: '+45 60409598',
     },
+    storageLocations: [
+      {
+        id: '6afebf6344bf850bfc30a250',
+        address: 'Industrivej 7',
+        postalCode: '6740',
+        city: 'Bramming',
+      },
+      {
+        id: '6afebf6344bf850bfc30a251',
+        address: 'Teatergade 2',
+        postalCode: '6700',
+        city: 'Esbjerg',
+      },
+    ],
   },
 }
 
@@ -149,7 +163,7 @@ describe('AdminView', () => {
     sessionStorage.clear()
   })
 
-  it('shows general association details and empty warehouse state', async () => {
+  it('shows general association details and every warehouse address', async () => {
     sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(
@@ -175,14 +189,21 @@ describe('AdminView', () => {
     expect(wrapper.text()).not.toContain('Ada Lovelace')
     expect(wrapper.text()).not.toContain('ada@example.dk')
     expect(wrapper.text()).toContain('Lageradresser')
-    expect(wrapper.text()).toContain('Der er endnu ikke tilføjet nogen lageradresser.')
+    expect(wrapper.text()).toContain('Industrivej 7')
+    expect(wrapper.text()).toContain('6740 Bramming')
+    expect(wrapper.text()).toContain('Teatergade 2')
+    expect(wrapper.text()).toContain('6700 Esbjerg')
+    expect(wrapper.findAll('[aria-label="Foreningens lageradresser"] li')).toHaveLength(2)
     expect(wrapper.find('button:disabled').exists()).toBe(true)
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/auth/me')
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
       headers: { Authorization: expect.stringMatching(/^Bearer /) },
     })
     expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/associations/current')
-    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'GET' })
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: 'GET',
+      headers: { Authorization: 'Bearer current-test-token' },
+    })
   })
 
   it('lets an association admin edit the association and its general contact person', async () => {
@@ -205,6 +226,7 @@ describe('AdminView', () => {
               email: 'updated@example.dk',
               phone: '+45 12345678',
             },
+            storageLocations: associationResponse.association.storageLocations,
           },
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -228,6 +250,10 @@ describe('AdminView', () => {
     expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/associations/current')
     expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
       method: 'PATCH',
+      headers: {
+        Authorization: 'Bearer current-test-token',
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({
         name: 'Skarntyden Theatre',
         contactPerson: {

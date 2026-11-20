@@ -9,6 +9,14 @@ export interface AssociationContactPerson {
 export interface AssociationProfile {
   name: string
   contactPerson: AssociationContactPerson | null
+  storageLocations: StorageLocation[]
+}
+
+export interface StorageLocation {
+  id: string
+  address: string
+  postalCode: string
+  city: string
 }
 
 export interface UpdateAssociationInput {
@@ -32,10 +40,23 @@ function isAssociationProfile(value: unknown): value is AssociationProfile {
   }
   const association = value as Partial<AssociationProfile>
   return typeof association.name === 'string'
+    && Array.isArray(association.storageLocations)
+    && association.storageLocations.every(isStorageLocation)
     && (
       association.contactPerson === null
       || isAssociationContactPerson(association.contactPerson)
     )
+}
+
+function isStorageLocation(value: unknown): value is StorageLocation {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+  const location = value as Partial<StorageLocation>
+  return typeof location.id === 'string'
+    && typeof location.address === 'string'
+    && typeof location.postalCode === 'string'
+    && typeof location.city === 'string'
 }
 
 async function requestAssociation(
@@ -52,7 +73,7 @@ async function requestAssociation(
     response = await fetch('/api/associations/current', {
       method,
       headers: {
-        Authorization: `******`,
+        Authorization: `Bearer ${accessToken}`,
         ...(input ? { 'Content-Type': 'application/json' } : {}),
       },
       ...(input ? { body: JSON.stringify(input) } : {}),

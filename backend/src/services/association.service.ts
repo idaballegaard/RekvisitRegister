@@ -2,6 +2,7 @@ import { ObjectId } from 'mongodb'
 import type { AssociationDocument } from '../models/association.model.ts'
 import {
   findAssociationById,
+  findStorageLocationsByIds,
   updateAssociationById,
 } from '../repositories/association.repository.ts'
 import { isValidEmail, normalizeEmail } from './user.service.ts'
@@ -15,6 +16,14 @@ export interface AssociationContactPerson {
 export interface AssociationProfile {
   name: string
   contactPerson: AssociationContactPerson | null
+  storageLocations: StorageLocation[]
+}
+
+export interface StorageLocation {
+  id: string
+  address: string
+  postalCode: string
+  city: string
 }
 
 export interface UpdateAssociationInput {
@@ -23,6 +32,7 @@ export interface UpdateAssociationInput {
 }
 
 export class AssociationNotFoundError extends Error {}
+export class AssociationStorageLocationsError extends Error {}
 export class InvalidAssociationInputError extends Error {}
 
 export function validateUpdateAssociationInput(input: unknown): UpdateAssociationInput {
@@ -77,10 +87,7 @@ export async function updateAssociationProfile(
   if (!updated) {
     throw new AssociationNotFoundError()
   }
-  return {
-    name: input.name,
-    contactPerson: input.contactPerson,
-  }
+  return getAssociationProfile(associationId)
 }
 
 async function findAssociation(associationId: string): Promise<AssociationDocument & { _id: ObjectId }> {
@@ -98,9 +105,36 @@ function parseAssociationId(associationId: string): ObjectId {
   return new ObjectId(associationId)
 }
 
-function toAssociationProfile(association: AssociationDocument): AssociationProfile {
+async function toAssociationProfile(
+  association: AssociationDocument & { _id: ObjectId },
+): Promise<AssociationProfile> {
+  const ids = association.storageLocationIds ?? []
+  if (!ids.every((id) => id instanceof ObjectId)) {
+    throw new AssociationStorageLocationsError('Foreningens lagerreferencer er ugyldige.')
+  }
+  const storageLocations = await findStorageLocationsByIds(ids)
+  const locationsById = new Map(
+    storageLocations.map((location) => [location._id.toHexString(), location]),
+  )
+
+  const orderedStorageLocations = ids.map((id) => {
+    const location = locationsById.get(id.toHexString())
+    if (!location) {
+      throw new AssociationStorageLocationsError(
+        `Lageradressen ${id.toHexString()} findes ikke i storagelocation.`,
+      )
+    }
+    return {
+      id: location._id.toHexString(),
+      address: location.address,
+      postalCode: location.postalCode,
+      city: location.city,
+    }
+  })
+
   return {
     name: association.name,
     contactPerson: association.contactPerson ?? null,
+    storageLocations: orderedStorageLocations,
   }
 }

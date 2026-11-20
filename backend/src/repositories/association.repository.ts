@@ -1,6 +1,7 @@
 import type { ClientSession, ObjectId, WithId } from 'mongodb'
 import { getDatabase } from '../config/database.ts'
 import type { AssociationDocument } from '../models/association.model.ts'
+import type { StorageLocationDocument } from '../models/storage-location.model.ts'
 
 export async function countAssociations(session: ClientSession): Promise<number> {
   return getDatabase().collection<AssociationDocument>('associations').countDocuments({}, { session })
@@ -43,4 +44,16 @@ export async function updateAssociationById(
     )
 
   return result.matchedCount === 1
+}
+
+export async function findStorageLocationsByIds(
+  ids: ObjectId[],
+): Promise<WithId<StorageLocationDocument>[]> {
+  if (ids.length === 0) {
+    return []
+  }
+  return getDatabase()
+    .collection<StorageLocationDocument>('storagelocation')
+    .find({ _id: { $in: ids } })
+    .toArray()
 }

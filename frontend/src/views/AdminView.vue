@@ -328,7 +328,32 @@ onMounted(async () => {
               + Tilføj lager
             </button>
           </div>
-          <p class="border-b border-[#e2e0e0] py-6 text-sm text-gray-medium">
+          <ul v-if="association.storageLocations.length" aria-label="Foreningens lageradresser">
+            <li
+              v-for="location in association.storageLocations"
+              :key="location.id"
+              class="flex items-center gap-4 border-b border-[#e2e0e0] py-5"
+            >
+              <svg
+                class="size-5 shrink-0 text-gray-medium"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                aria-hidden="true"
+              >
+                <path d="M3 10.5 12 4l9 6.5V21H3z" />
+                <path d="M9 21v-7h6v7M7 10h.01M17 10h.01" />
+              </svg>
+              <div>
+                <p class="text-sm">{{ location.address }}</p>
+                <p class="mt-1 text-sm text-gray-medium">
+                  {{ location.postalCode }} {{ location.city }}
+                </p>
+              </div>
+            </li>
+          </ul>
+          <p v-else class="border-b border-[#e2e0e0] py-6 text-sm text-gray-medium">
             Der er endnu ikke tilføjet nogen lageradresser.
           </p>
         </section>
