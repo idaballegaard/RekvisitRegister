@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   createAssociationStorageLocation,
   deleteAssociationStorageLocation,
@@ -19,6 +19,7 @@ import {
 } from '../services/auth.service'
 
 const router = useRouter()
+const route = useRoute()
 const profile = ref<CurrentUserProfile | null>(null)
 const association = ref<AssociationProfile | null>(null)
 const props = ref<AssociationProp[] | null>(null)
@@ -101,6 +102,13 @@ async function openPropsTab(): Promise<void> {
   } finally {
     isLoadingProps.value = false
   }
+}
+
+async function openProp(propId: string): Promise<void> {
+  await router.push({
+    name: 'admin-prop-detail',
+    params: { propId },
+  })
 }
 
 function openGeneralTab(): void {
@@ -295,6 +303,10 @@ onMounted(async () => {
     }
     profile.value = currentUser
     association.value = await getCurrentAssociation()
+    if (route.query.tab === 'props') {
+      propSearch.value = typeof route.query.q === 'string' ? route.query.q : ''
+      await openPropsTab()
+    }
   } catch (error) {
     if (error instanceof UnauthorizedError) {
       await router.replace({ name: 'login' })
@@ -770,36 +782,43 @@ onMounted(async () => {
             :key="prop.id"
             class="group overflow-hidden rounded-lg border border-[#e2e0e0] bg-white transition duration-200 hover:border-brand hover:shadow-md"
           >
-            <div
-              class="grid h-[120px] place-items-center bg-[#f4f2ef]"
-              role="img"
-              :aria-label="`Billedområde for ${prop.name}`"
+            <button
+              class="block w-full cursor-pointer text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand"
+              type="button"
+              :aria-label="`Åbn rekvisit ${prop.name}`"
+              @click="openProp(prop.id)"
             >
-              <svg
-                class="size-6 text-[#a39789]"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-                aria-hidden="true"
+              <div
+                class="grid h-[120px] place-items-center bg-[#f4f2ef]"
+                role="img"
+                :aria-label="`Billedområde for ${prop.name}`"
               >
-                <rect x="3.5" y="4.5" width="17" height="15" rx="1.5" />
-                <circle cx="8.5" cy="9" r="1.5" />
-                <path d="m20.5 15-5-5L6 19.5" />
-              </svg>
-            </div>
-            <div class="p-4">
-              <h3 class="text-lg font-bold">{{ prop.name }}</h3>
-              <p
-                v-if="prop.description"
-                class="mt-2 line-clamp-2 text-base leading-6 text-gray-medium"
-              >
-                {{ prop.description }}
-              </p>
-              <p v-else class="mt-2 line-clamp-2 text-base leading-6 text-gray-medium">
-                Ingen beskrivelse
-              </p>
-            </div>
+                <svg
+                  class="size-6 text-[#a39789]"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  aria-hidden="true"
+                >
+                  <rect x="3.5" y="4.5" width="17" height="15" rx="1.5" />
+                  <circle cx="8.5" cy="9" r="1.5" />
+                  <path d="m20.5 15-5-5L6 19.5" />
+                </svg>
+              </div>
+              <div class="p-4">
+                <h3 class="text-lg font-bold">{{ prop.name }}</h3>
+                <p
+                  v-if="prop.description"
+                  class="mt-2 line-clamp-2 text-base leading-6 text-gray-medium"
+                >
+                  {{ prop.description }}
+                </p>
+                <p v-else class="mt-2 line-clamp-2 text-base leading-6 text-gray-medium">
+                  Ingen beskrivelse
+                </p>
+              </div>
+            </button>
           </li>
         </ul>
       </section>

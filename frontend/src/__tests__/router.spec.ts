@@ -22,6 +22,14 @@ describe('router authentication guard', () => {
     expect(router.currentRoute.value.query.redirect).toBe('/admin')
   })
 
+  it('redirects to login when a prop detail has no access token', async () => {
+    await router.push('/admin/props/6b002a5c3c49f74ff7188de8')
+
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(router.currentRoute.value.query.redirect)
+      .toBe('/admin/props/6b002a5c3c49f74ff7188de8')
+  })
+
   it('allows profile navigation when an access token is present', async () => {
     sessionStorage.setItem('rekvisit-register.access-token', 'test-token')
     await router.push('/profile')

@@ -1,6 +1,14 @@
 import type { RequestHandler } from 'express'
 import { getAuthenticatedUser } from '../middleware/auth.middleware.ts'
-import { AssociationPropsError, getAssociationProps } from '../services/prop.service.ts'
+import {
+  AssociationPropNotFoundError,
+  AssociationPropStorageLocationNotFoundError,
+  AssociationPropsError,
+  getAssociationProps,
+  InvalidAssociationPropInputError,
+  updateAssociationProp,
+  validateUpdateAssociationPropInput,
+} from '../services/prop.service.ts'
 import {
   AssociationNotFoundError,
   AssociationStorageLocationNotFoundError,
@@ -39,6 +47,44 @@ export const getCurrentAssociationProps: RequestHandler = async (request, respon
     const props = await getAssociationProps(user.associationId)
     response.json({ props })
   } catch (error) {
+    if (error instanceof AssociationPropsError) {
+      response.status(500).json({ error: error.message })
+      return
+    }
+    next(error)
+  }
+}
+
+export const patchCurrentAssociationProp: RequestHandler = async (request, response, next) => {
+  let input
+  try {
+    input = validateUpdateAssociationPropInput(request.body)
+  } catch (error) {
+    if (error instanceof InvalidAssociationPropInputError) {
+      response.status(400).json({ error: error.message })
+      return
+    }
+    next(error)
+    return
+  }
+
+  try {
+    const user = getAuthenticatedUser(request)
+    const prop = await updateAssociationProp(
+      user.associationId,
+      typeof request.params.propId === 'string' ? request.params.propId : '',
+      input,
+    )
+    response.json({ message: 'Rekvisitten er opdateret.', prop })
+  } catch (error) {
+    if (error instanceof AssociationPropNotFoundError) {
+      response.status(404).json({ error: 'Rekvisitten blev ikke fundet.' })
+      return
+    }
+    if (error instanceof AssociationPropStorageLocationNotFoundError) {
+      response.status(400).json({ error: 'Vælg en lageradresse fra din forening.' })
+      return
+    }
     if (error instanceof AssociationPropsError) {
       response.status(500).json({ error: error.message })
       return

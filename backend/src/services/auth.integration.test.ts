@@ -290,6 +290,76 @@ describe('auth endpoints with MongoDB', () => {
     })
   })
 
+  test('updates only a valid prop owned by the authenticated association', async () => {
+    const updatedInput = {
+      name: 'Træstol med nyt sæde',
+      description: 'En opdateret beskrivelse.',
+      storageLocationId: storageLocationIds[1].toHexString(),
+      availability: false,
+      dimensions: { height: 91, width: 46, depth: 44, unit: 'cm' },
+      quantity: 2,
+      colour: 'Sort',
+      placement: 'Reol 4',
+      tags: ['stol', 'opdateret'],
+      condition: 'Nyligt istandsat',
+      historicalPeriod: '1920’erne',
+    }
+    const response = await fetch(
+      `${baseUrl}/associations/current/props/6b002a5c3c49f74ff7188de8`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: 'Bearer ' + authenticatedAccessToken,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updatedInput),
+      },
+    )
+
+    assert.equal(response.status, 200)
+    assert.deepEqual(await response.json(), {
+      message: 'Rekvisitten er opdateret.',
+      prop: {
+        id: '6b002a5c3c49f74ff7188de8',
+        ...updatedInput,
+      },
+    })
+
+    const foreignAssociationId = new ObjectId()
+    const foreignPropId = new ObjectId()
+    await getDatabase().collection<PropDocument>('prop').insertOne({
+      _id: foreignPropId,
+      ...updatedInput,
+      associationId: foreignAssociationId,
+      storageLocationId: storageLocationIds[0],
+    })
+    const foreignPropResponse = await fetch(
+      `${baseUrl}/associations/current/props/${foreignPropId.toHexString()}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: 'Bearer ' + authenticatedAccessToken,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updatedInput),
+      },
+    )
+    assert.equal(foreignPropResponse.status, 404)
+
+    const invalidInputResponse = await fetch(
+      `${baseUrl}/associations/current/props/6b002a5c3c49f74ff7188de8`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: 'Bearer ' + authenticatedAccessToken,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ...updatedInput, quantity: 0 }),
+      },
+    )
+    assert.equal(invalidInputResponse.status, 400)
+  })
+
   test('returns a generic response for an unknown reset email', async () => {
     const response = await fetch(`${baseUrl}/auth/forgot-password`, {
       method: 'POST',
@@ -560,6 +630,31 @@ describe('auth endpoints with MongoDB', () => {
         body: JSON.stringify(updateInput),
       })
       assert.equal(forbiddenUpdateResponse.status, 403)
+
+      const forbiddenPropEditResponse = await fetch(
+        `${baseUrl}/associations/current/props/6b002a5c3c49f74ff7188de8`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: 'Bearer ' + associationManagerAccessToken,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: 'No permission',
+            description: '',
+            storageLocationId: storageLocationIds[0].toHexString(),
+            availability: true,
+            dimensions: { height: 1, width: 1, depth: 1, unit: 'cm' },
+            quantity: 1,
+            colour: '',
+            placement: '',
+            tags: [],
+            condition: '',
+            historicalPeriod: '',
+          }),
+        },
+      )
+      assert.equal(forbiddenPropEditResponse.status, 403)
 
       const forbiddenLocationResponse = await fetch(
         `${baseUrl}/associations/current/storage-locations`,

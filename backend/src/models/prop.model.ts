@@ -36,3 +36,7 @@ export interface AssociationProp {
   condition: string
   historicalPeriod: string
 }
+
+export type UpdateAssociationPropInput = Omit<PropDocument, 'associationId' | 'storageLocationId'> & {
+  storageLocationId: string
+}

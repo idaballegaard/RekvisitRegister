@@ -218,6 +218,50 @@ export const openApiDocument = {
         },
       },
     },
+    '/associations/current/props/{propId}': {
+      patch: {
+        summary: 'Opdatér en rekvisit i den indloggede brugers forening',
+        description: 'Kræver rollen associationAdmin. Rekvisitten og lageradressen skal tilhøre foreningen.',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'propId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', pattern: '^[a-fA-F0-9]{24}$' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/AssociationPropUpdate' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Rekvisitten er opdateret.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['message', 'prop'],
+                  properties: {
+                    message: { type: 'string' },
+                    prop: { $ref: '#/components/schemas/AssociationProp' },
+                  },
+                },
+              },
+            },
+          },
+          '400': { description: 'Rekvisitoplysningerne eller lageradressen er ugyldige.' },
+          '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
+          '403': { description: 'Brugeren må ikke redigere rekvisitter.' },
+          '404': { description: 'Rekvisitten blev ikke fundet i foreningen.' },
+        },
+      },
+    },
     '/associations/current': {
       get: {
         summary: 'Hent oplysninger om den indloggede brugers forening',
@@ -522,6 +566,48 @@ export const openApiDocument = {
                 tags: { type: 'array', items: { type: 'string' }, example: ['stol', 'træstol'] },
                 condition: { type: 'string', example: 'God stand med lette brugsspor' },
                 historicalPeriod: { type: 'string', example: '1920’erne' },
+              },
+            },
+            AssociationPropUpdate: {
+              type: 'object',
+              required: [
+                'name',
+                'description',
+                'storageLocationId',
+                'availability',
+                'dimensions',
+                'quantity',
+                'colour',
+                'placement',
+                'tags',
+                'condition',
+                'historicalPeriod',
+              ],
+              properties: {
+                name: { type: 'string', maxLength: 120 },
+                description: { type: 'string', maxLength: 2000 },
+                storageLocationId: { type: 'string', pattern: '^[a-fA-F0-9]{24}$' },
+                availability: { type: 'boolean' },
+                dimensions: {
+                  type: 'object',
+                  required: ['height', 'width', 'depth', 'unit'],
+                  properties: {
+                    height: { type: 'number', minimum: 0 },
+                    width: { type: 'number', minimum: 0 },
+                    depth: { type: 'number', minimum: 0 },
+                    unit: { type: 'string', minLength: 1, maxLength: 20 },
+                  },
+                },
+                quantity: { type: 'integer', minimum: 1 },
+                colour: { type: 'string', maxLength: 80 },
+                placement: { type: 'string', maxLength: 120 },
+                tags: {
+                  type: 'array',
+                  maxItems: 30,
+                  items: { type: 'string', minLength: 1, maxLength: 50 },
+                },
+                condition: { type: 'string', maxLength: 500 },
+                historicalPeriod: { type: 'string', maxLength: 100 },
               },
             },
           },

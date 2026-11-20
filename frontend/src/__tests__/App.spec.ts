@@ -3,18 +3,23 @@ import { mount } from '@vue/test-utils'
 import AdminView from '../views/AdminView.vue'
 import LoginView from '../views/LoginView.vue'
 import ProfileView from '../views/ProfileView.vue'
+import PropDetailView from '../views/PropDetailView.vue'
 import ResetPasswordView from '../views/ResetPasswordView.vue'
 import VerifyEmailView from '../views/VerifyEmailView.vue'
 
-const { routerPush, routerReplace } = vi.hoisted(() => ({
+const { routerPush, routerReplace, routeState } = vi.hoisted(() => ({
   routerPush: vi.fn(),
   routerReplace: vi.fn(),
+  routeState: {
+    params: { propId: '6b002a5c3c49f74ff7188de8' },
+    query: { token: 'a'.repeat(64), tab: '', q: 'stol' },
+  },
 }))
 
 vi.mock('vue-router', () => ({
   RouterLink: { template: '<a><slot /></a>' },
   useRouter: () => ({ push: routerPush, replace: routerReplace }),
-  useRoute: () => ({ query: { token: 'a'.repeat(64) } }),
+  useRoute: () => routeState,
 }))
 
 const currentUserResponse = {
@@ -192,7 +197,10 @@ describe('LoginView', () => {
 describe('AdminView', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+    routerPush.mockReset()
     routerReplace.mockReset()
+    routeState.query.tab = ''
+    routeState.query.q = 'stol'
     sessionStorage.clear()
   })
 
@@ -317,6 +325,226 @@ describe('AdminView', () => {
     expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/associations/current/props')
     expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
       headers: { Authorization: 'Bearer current-test-token' },
+    })
+  })
+
+  it('navigates from a prop card to its detail view', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(currentUserResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(associationResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(associationPropsResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Kontaktoplysninger')
+    })
+    await wrapper.findAll('button')
+      .find((button) => button.text() === 'Egne rekvisitter')
+      ?.trigger('click')
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Træstol')
+    })
+    await wrapper.get('button[aria-label="Åbn rekvisit Træstol"]').trigger('click')
+
+    expect(routerPush).toHaveBeenCalledWith({
+      name: 'admin-prop-detail',
+      params: { propId: '6b002a5c3c49f74ff7188de8' },
+    })
+  })
+
+  it('shows complete prop details and returns to the searched prop list', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    routeState.query.q = 'stol'
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(currentUserResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(associationResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(associationPropsResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(PropDetailView)
+
+    await vi.waitFor(() => {
+      expect(wrapper.get('#prop-detail-heading').text()).toBe('Træstol')
+    })
+    expect(wrapper.text()).toContain('Adminpanel')
+    expect(wrapper.get('nav[aria-label="Adminpanel-faner"]').text()).toContain('Egne rekvisitter')
+    expect(wrapper.findAll('#prop-detail-heading')).toHaveLength(1)
+    expect(wrapper.text()).toContain('Mørk træstol med polstret sæde.')
+    expect(wrapper.text()).toContain('God stand med lette brugsspor')
+    expect(wrapper.text()).toContain('90 × 45 × 45 cm')
+    expect(wrapper.text()).toContain('Industrivej 7, 6740 Bramming')
+    expect(wrapper.text()).toContain('Reol 3')
+    expect(wrapper.text()).toContain('stol')
+    expect(wrapper.get('[role="img"]').attributes('aria-label'))
+      .toBe('Billedområde for Træstol')
+
+    await wrapper.findAll('button')
+      .find((button) => button.text().includes('Tilbage til egne rekvisitter'))
+      ?.trigger('click')
+    expect(routerPush).toHaveBeenCalledWith({
+      name: 'admin',
+      query: { tab: 'props', q: 'stol' },
+    })
+  })
+
+  it('lets an association admin edit and save a prop', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const updatedProp = {
+      ...associationPropsResponse.props[0],
+      name: 'Træstol restaureret',
+      description: 'Nyligt restaureret træstol.',
+      tags: ['stol', 'restaureret'],
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(currentUserResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(associationResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(associationPropsResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({ message: 'Rekvisitten er opdateret.', prop: updatedProp }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(PropDetailView)
+
+    await vi.waitFor(() => {
+      expect(wrapper.get('#prop-detail-heading').text()).toBe('Træstol')
+    })
+    await wrapper.findAll('button')
+      .find((button) => button.text() === 'Redigér')
+      ?.trigger('click')
+    await wrapper.get('#prop-name').setValue('Træstol restaureret')
+    await wrapper.get('#prop-description').setValue('Nyligt restaureret træstol.')
+    await wrapper.get('#prop-tags').setValue('stol, restaureret')
+    await wrapper.get('form').trigger('submit')
+
+    await vi.waitFor(() => {
+      expect(wrapper.get('#prop-detail-heading').text()).toBe('Træstol restaureret')
+      expect(wrapper.text()).toContain('Rekvisitten er opdateret.')
+    })
+    expect(fetchMock.mock.calls[3]?.[0]).toBe(
+      '/api/associations/current/props/6b002a5c3c49f74ff7188de8',
+    )
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({
+      method: 'PATCH',
+      body: JSON.stringify({
+        name: 'Træstol restaureret',
+        description: 'Nyligt restaureret træstol.',
+        storageLocationId: '6afebf6344bf850bfc30a250',
+        availability: true,
+        dimensions: { height: 90, width: 45, depth: 45, unit: 'cm' },
+        quantity: 1,
+        colour: 'Mørkebrun',
+        placement: 'Reol 3',
+        tags: ['stol', 'restaureret'],
+        condition: 'God stand med lette brugsspor',
+        historicalPeriod: '1920’erne',
+      }),
+    })
+  })
+
+  it('navigates from a prop card to its detail view', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(currentUserResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(associationResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(associationPropsResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Kontaktoplysninger')
+    })
+    await wrapper.findAll('button')
+      .find((button) => button.text() === 'Egne rekvisitter')
+      ?.trigger('click')
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Træstol')
+    })
+    await wrapper.get('button[aria-label="Åbn rekvisit Træstol"]').trigger('click')
+
+    expect(routerPush).toHaveBeenCalledWith({
+      name: 'admin-prop-detail',
+      params: { propId: '6b002a5c3c49f74ff7188de8' },
+    })
+  })
+
+  it('shows complete prop details and returns to the searched prop list', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    routeState.query.q = 'stol'
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(currentUserResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(associationResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(associationPropsResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(PropDetailView)
+
+    await vi.waitFor(() => {
+      expect(wrapper.get('#prop-detail-heading').text()).toBe('Træstol')
+    })
+    expect(wrapper.text()).toContain('Adminpanel')
+    expect(wrapper.get('nav[aria-label="Adminpanel-faner"]').text()).toContain('Egne rekvisitter')
+    expect(wrapper.findAll('#prop-detail-heading')).toHaveLength(1)
+    expect(wrapper.text()).toContain('Mørk træstol med polstret sæde.')
+    expect(wrapper.text()).toContain('God stand med lette brugsspor')
+    expect(wrapper.text()).toContain('90 × 45 × 45 cm')
+    expect(wrapper.text()).toContain('Industrivej 7, 6740 Bramming')
+    expect(wrapper.text()).toContain('Reol 3')
+    expect(wrapper.text()).toContain('stol')
+    expect(wrapper.get('[role="img"]').attributes('aria-label'))
+      .toBe('Billedområde for Træstol')
+
+    await wrapper.findAll('button')
+      .find((button) => button.text().includes('Tilbage til egne rekvisitter'))
+      ?.trigger('click')
+    expect(routerPush).toHaveBeenCalledWith({
+      name: 'admin',
+      query: { tab: 'props', q: 'stol' },
     })
   })
 

@@ -2,6 +2,7 @@ import { Router } from 'express'
 import {
   getCurrentAssociation,
   getCurrentAssociationProps,
+  patchCurrentAssociationProp,
   patchCurrentAssociation,
   patchCurrentAssociationStorageLocation,
   deleteCurrentAssociationStorageLocation,
@@ -18,6 +19,12 @@ associationRouter.get(
   requireAuthentication,
   requirePermission(PERMISSIONS.SEARCH_PROPS),
   getCurrentAssociationProps,
+)
+associationRouter.patch(
+  '/associations/current/props/:propId',
+  requireAuthentication,
+  requirePermission(PERMISSIONS.UPDATE_ASSOCIATION),
+  patchCurrentAssociationProp,
 )
 associationRouter.patch(
   '/associations/current',

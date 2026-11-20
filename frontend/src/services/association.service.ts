@@ -39,6 +39,8 @@ export interface AssociationProp {
   historicalPeriod: string
 }
 
+export type UpdateAssociationPropInput = Omit<AssociationProp, 'id'>
+
 export interface UpdateAssociationInput {
   name: string
   contactPerson: AssociationContactPerson
@@ -230,6 +232,66 @@ export async function getCurrentAssociationProps(): Promise<AssociationProp[]> {
   }
 
   return body.props
+}
+
+export async function updateCurrentAssociationProp(
+  propId: string,
+  input: UpdateAssociationPropInput,
+): Promise<AssociationProp> {
+  const accessToken = sessionStorage.getItem('rekvisit-register.access-token')
+  if (!accessToken) {
+    throw new UnauthorizedError('Du er ikke logget ind.')
+  }
+
+  let response: Response
+  try {
+    response = await fetch(
+      `/api/associations/current/props/${encodeURIComponent(propId)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(input),
+      },
+    )
+  } catch {
+    throw new Error('Kunne ikke kontakte serveren. Kontrollér, at backend kører.')
+  }
+
+  let body: unknown
+  try {
+    body = await response.json()
+  } catch {
+    throw new Error('Serveren returnerede et ugyldigt svar.')
+  }
+
+  if (response.status === 401) {
+    clearAuthSession()
+    throw new UnauthorizedError('Dit login er udløbet. Log ind igen.')
+  }
+  if (!response.ok) {
+    if (
+      typeof body === 'object'
+      && body !== null
+      && 'error' in body
+      && typeof body.error === 'string'
+    ) {
+      throw new Error(body.error)
+    }
+    throw new Error(`Rekvisitten kunne ikke gemmes (HTTP ${response.status}).`)
+  }
+  if (
+    typeof body !== 'object'
+    || body === null
+    || !('prop' in body)
+    || !isAssociationProp(body.prop)
+  ) {
+    throw new Error('Serveren returnerede ugyldige rekvisitoplysninger.')
+  }
+
+  return body.prop
 }
 
 export function updateCurrentAssociation(
