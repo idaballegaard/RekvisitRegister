@@ -190,6 +190,34 @@ export const openApiDocument = {
         },
       },
     },
+    '/associations/current/props': {
+      get: {
+        summary: 'Hent rekvisitter for den indloggede brugers forening',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Foreningens rekvisitter sorteret efter navn.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['props'],
+                  properties: {
+                    props: {
+                      type: 'array',
+                      items: { $ref: '#/components/schemas/AssociationProp' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
+          '403': { description: 'Brugeren må ikke søge i rekvisitter.' },
+          '500': { description: 'En eller flere rekvisitter har ugyldige databaseoplysninger.' },
+        },
+      },
+    },
     '/associations/current': {
       get: {
         summary: 'Hent oplysninger om den indloggede brugers forening',
@@ -454,6 +482,46 @@ export const openApiDocument = {
                 address: { type: 'string', example: 'Industrivej 7' },
                 postalCode: { type: 'string', example: '6740' },
                 city: { type: 'string', example: 'Bramming' },
+              },
+            },
+            AssociationProp: {
+              type: 'object',
+              required: [
+                'id',
+                'name',
+                'description',
+                'storageLocationId',
+                'availability',
+                'dimensions',
+                'quantity',
+                'colour',
+                'placement',
+                'tags',
+                'condition',
+                'historicalPeriod',
+              ],
+              properties: {
+                id: { type: 'string', example: '6b002a5c3c49f74ff7188de8' },
+                name: { type: 'string', example: 'Træstol' },
+                description: { type: 'string', example: 'Mørk træstol med polstret sæde.' },
+                storageLocationId: { type: 'string', example: '6afebf6344bf850bfc30a250' },
+                availability: { type: 'boolean', example: true },
+                dimensions: {
+                  type: 'object',
+                  required: ['height', 'width', 'depth', 'unit'],
+                  properties: {
+                    height: { type: 'number', example: 90 },
+                    width: { type: 'number', example: 45 },
+                    depth: { type: 'number', example: 45 },
+                    unit: { type: 'string', example: 'cm' },
+                  },
+                },
+                quantity: { type: 'number', example: 1 },
+                colour: { type: 'string', example: 'Mørkebrun' },
+                placement: { type: 'string', example: 'Reol 3' },
+                tags: { type: 'array', items: { type: 'string' }, example: ['stol', 'træstol'] },
+                condition: { type: 'string', example: 'God stand med lette brugsspor' },
+                historicalPeriod: { type: 'string', example: '1920’erne' },
               },
             },
           },

@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   createAssociationStorageLocation,
   deleteAssociationStorageLocation,
   getCurrentAssociation,
+  getCurrentAssociationProps,
   updateAssociationStorageLocation,
   updateCurrentAssociation,
+  type AssociationProp,
   type AssociationProfile,
 } from '../services/association.service'
 import {
@@ -19,6 +21,11 @@ import {
 const router = useRouter()
 const profile = ref<CurrentUserProfile | null>(null)
 const association = ref<AssociationProfile | null>(null)
+const props = ref<AssociationProp[] | null>(null)
+const activeTab = ref<'general' | 'props'>('general')
+const propSearch = ref('')
+const isLoadingProps = ref(false)
+const propsErrorMessage = ref('')
 const isLoading = ref(true)
 const isEditing = ref(false)
 const isSaving = ref(false)
@@ -47,6 +54,57 @@ const roleNames: Record<CurrentUserProfile['role'], string> = {
   associationAdmin: 'Foreningsansvarlig',
   propManager: 'Rekvisitansvarlig',
   searchUser: 'Søgebruger',
+}
+const filteredProps = computed(() => {
+  const search = propSearch.value.trim().toLocaleLowerCase('da-DK')
+  if (!search) {
+    return props.value ?? []
+  }
+  return (props.value ?? []).filter((prop) => [
+    prop.name,
+    prop.description,
+    prop.colour,
+    prop.placement,
+    prop.condition,
+    prop.historicalPeriod,
+    String(prop.quantity),
+    `${prop.dimensions.height} ${prop.dimensions.width} ${prop.dimensions.depth} ${prop.dimensions.unit}`,
+    getStorageLocationLabel(prop.storageLocationId),
+    ...prop.tags,
+  ].some((value) => value.toLocaleLowerCase('da-DK').includes(search)))
+})
+
+function getStorageLocationLabel(locationId: string): string {
+  const location = association.value?.storageLocations.find(({ id }) => id === locationId)
+  return location
+    ? `${location.address}, ${location.postalCode} ${location.city}`
+    : 'Lageradresse ikke fundet'
+}
+
+async function openPropsTab(): Promise<void> {
+  activeTab.value = 'props'
+  if (props.value !== null || isLoadingProps.value) {
+    return
+  }
+  propsErrorMessage.value = ''
+  isLoadingProps.value = true
+  try {
+    props.value = await getCurrentAssociationProps()
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      await router.replace({ name: 'login' })
+      return
+    }
+    propsErrorMessage.value = error instanceof Error
+      ? error.message
+      : 'Foreningens rekvisitter kunne ikke hentes.'
+  } finally {
+    isLoadingProps.value = false
+  }
+}
+
+function openGeneralTab(): void {
+  activeTab.value = 'general'
 }
 
 async function logout(): Promise<void> {
@@ -282,20 +340,27 @@ onMounted(async () => {
       <nav class="border-b border-[#e2e0e0]" aria-label="Adminpanel-faner">
         <ul class="-mb-px flex flex-wrap gap-8 max-[540px]:gap-6">
           <li>
-            <a
-              class="inline-flex h-[54px] items-center border-b-2 border-brand px-0.5 text-base font-bold text-brand"
-              href="#generelt"
-              aria-current="page"
+            <button
+              class="inline-flex h-[54px] items-center border-b-2 px-0.5 text-base"
+              :class="activeTab === 'general'
+                ? 'border-brand font-bold text-brand'
+                : 'border-transparent text-gray-medium hover:text-brand'"
+              :aria-current="activeTab === 'general' ? 'page' : undefined"
+              type="button"
+              @click="openGeneralTab"
             >
               Generelt
-            </a>
+            </button>
           </li>
           <li>
             <button
-              class="h-[54px] cursor-not-allowed px-0.5 text-base text-gray-medium/60"
+              class="inline-flex h-[54px] items-center border-b-2 px-0.5 text-base"
+              :class="activeTab === 'props'
+                ? 'border-brand font-bold text-brand'
+                : 'border-transparent text-gray-medium hover:text-brand'"
               type="button"
-              disabled
-              title="Denne fane er ikke tilgængelig endnu"
+              :aria-current="activeTab === 'props' ? 'page' : undefined"
+              @click="openPropsTab"
             >
               Egne rekvisitter
             </button>
@@ -323,7 +388,7 @@ onMounted(async () => {
         </ul>
       </nav>
 
-      <div v-if="profile && association" id="generelt">
+      <div v-if="profile && association && activeTab === 'general'" id="generelt">
         <form id="association-info-form" @submit.prevent="saveAssociation">
           <section
             class="border-b border-[#e2e0e0] pt-10 pb-12 max-[700px]:py-8"
@@ -650,6 +715,94 @@ onMounted(async () => {
           </p>
         </section>
       </div>
+
+      <section
+        v-if="profile && association && activeTab === 'props'"
+        class="py-10"
+        aria-labelledby="props-heading"
+      >
+        <div class="mb-7 flex flex-wrap items-start justify-between gap-5">
+          <div>
+            <h2 id="props-heading" class="text-2xl font-bold text-brand">
+              Egne rekvisitter
+            </h2>
+            <p class="mt-2 text-base text-gray-medium">
+              Find foreningens rekvisitter.
+            </p>
+          </div>
+        </div>
+        <div class="mb-6 flex flex-wrap items-center justify-between gap-5">
+          <label class="grid w-full max-w-[32rem] gap-2 text-base text-gray-medium" for="prop-search">
+            <span class="sr-only">Søg i egne rekvisitter</span>
+            <input
+              id="prop-search"
+              v-model="propSearch"
+              aria-label="Søg i egne rekvisitter"
+              class="h-12 w-full rounded border border-gray-light px-4 text-base text-gray-dark focus-visible:outline-2 focus-visible:outline-brand"
+              type="search"
+              autocomplete="off"
+              placeholder="Søg i egne rekvisitter"
+            />
+          </label>
+          <p v-if="props !== null" class="text-base text-gray-medium" aria-live="polite">
+            {{ filteredProps.length }} af {{ props.length }} rekvisitter
+          </p>
+        </div>
+        <p v-if="isLoadingProps" class="py-8 text-base text-gray-medium" role="status">
+          Henter rekvisitter…
+        </p>
+        <p v-else-if="propsErrorMessage" class="py-4 text-base text-brand" role="alert">
+          {{ propsErrorMessage }}
+        </p>
+        <p v-else-if="props?.length === 0" class="py-8 text-base text-gray-medium">
+          Foreningen har endnu ikke registreret nogen rekvisitter.
+        </p>
+        <p v-else-if="filteredProps.length === 0" class="py-8 text-base text-gray-medium">
+          Ingen rekvisitter matcher søgningen.
+        </p>
+        <ul
+          v-else
+          class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4"
+          aria-label="Foreningens rekvisitter"
+        >
+          <li
+            v-for="prop in filteredProps"
+            :key="prop.id"
+            class="group overflow-hidden rounded-lg border border-[#e2e0e0] bg-white transition duration-200 hover:border-brand hover:shadow-md"
+          >
+            <div
+              class="grid h-[120px] place-items-center bg-[#f4f2ef]"
+              role="img"
+              :aria-label="`Billedområde for ${prop.name}`"
+            >
+              <svg
+                class="size-6 text-[#a39789]"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                aria-hidden="true"
+              >
+                <rect x="3.5" y="4.5" width="17" height="15" rx="1.5" />
+                <circle cx="8.5" cy="9" r="1.5" />
+                <path d="m20.5 15-5-5L6 19.5" />
+              </svg>
+            </div>
+            <div class="p-4">
+              <h3 class="text-lg font-bold">{{ prop.name }}</h3>
+              <p
+                v-if="prop.description"
+                class="mt-2 line-clamp-2 text-base leading-6 text-gray-medium"
+              >
+                {{ prop.description }}
+              </p>
+              <p v-else class="mt-2 line-clamp-2 text-base leading-6 text-gray-medium">
+                Ingen beskrivelse
+              </p>
+            </div>
+          </li>
+        </ul>
+      </section>
 
       <footer class="flex justify-end border-t border-[#e2e0e0] pt-4">
         <button

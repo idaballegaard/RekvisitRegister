@@ -56,6 +56,39 @@ const associationResponse = {
   },
 }
 
+const associationPropsResponse = {
+  props: [
+    {
+      id: '6b002a5c3c49f74ff7188de8',
+      name: 'Træstol',
+      description: 'Mørk træstol med polstret sæde.',
+      storageLocationId: '6afebf6344bf850bfc30a250',
+      availability: true,
+      dimensions: { height: 90, width: 45, depth: 45, unit: 'cm' },
+      quantity: 1,
+      colour: 'Mørkebrun',
+      placement: 'Reol 3',
+      tags: ['stol', 'træstol', 'møbel', 'polstret'],
+      condition: 'God stand med lette brugsspor',
+      historicalPeriod: '1920’erne',
+    },
+    {
+      id: '6b002a5c3c49f74ff7188de9',
+      name: 'Læderkuffert',
+      description: 'Brun rejsekuffert med metalspænder.',
+      storageLocationId: '6afebf6344bf850bfc30a251',
+      availability: false,
+      dimensions: { height: 50, width: 35, depth: 20, unit: 'cm' },
+      quantity: 2,
+      colour: 'Brun',
+      placement: 'Reol 1',
+      tags: ['kuffert', 'rejse'],
+      condition: 'Slidt',
+      historicalPeriod: '1940’erne',
+    },
+  ],
+}
+
 describe('LoginView', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -230,6 +263,59 @@ describe('AdminView', () => {
     expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/associations/current')
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
       method: 'GET',
+      headers: { Authorization: 'Bearer current-test-token' },
+    })
+  })
+
+  it('loads and searches the association prop list', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(currentUserResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(associationResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(associationPropsResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Kontaktoplysninger')
+    })
+    expect(wrapper.find('button[disabled]').text()).not.toContain('Egne rekvisitter')
+    await wrapper.findAll('button')
+      .find((button) => button.text() === 'Egne rekvisitter')
+      ?.trigger('click')
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Træstol')
+      expect(wrapper.text()).toContain('Læderkuffert')
+    })
+    const firstProp = wrapper.get('[aria-label="Foreningens rekvisitter"] li')
+    expect(firstProp.get('h3').text()).toBe('Træstol')
+    expect(firstProp.get('[role="img"]').attributes('aria-label'))
+      .toBe('Billedområde for Træstol')
+    expect(firstProp.get('[role="img"]').classes()).toContain('h-[120px]')
+    expect(firstProp.classes()).toContain('hover:border-brand')
+    expect(firstProp.classes()).toContain('hover:shadow-md')
+    expect(wrapper.get('[aria-label="Foreningens rekvisitter"]').classes())
+      .toContain('lg:grid-cols-4')
+    expect(firstProp.text()).toContain('Mørk træstol med polstret sæde.')
+    expect(firstProp.text()).not.toContain('God stand med lette brugsspor')
+    expect(wrapper.get('input[type="search"]').attributes('aria-label'))
+      .toBe('Søg i egne rekvisitter')
+    await wrapper.get('input[type="search"]').setValue('rejse')
+    expect(wrapper.text()).toContain('Læderkuffert')
+    expect(wrapper.text()).not.toContain('Træstol')
+    expect(wrapper.text()).toContain('1 af 2 rekvisitter')
+    expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/associations/current/props')
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
       headers: { Authorization: 'Bearer current-test-token' },
     })
   })

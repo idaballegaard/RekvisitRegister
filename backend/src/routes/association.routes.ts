@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import {
   getCurrentAssociation,
+  getCurrentAssociationProps,
   patchCurrentAssociation,
   patchCurrentAssociationStorageLocation,
   deleteCurrentAssociationStorageLocation,
@@ -12,6 +13,12 @@ import { PERMISSIONS } from '../models/user.model.ts'
 const associationRouter = Router()
 
 associationRouter.get('/associations/current', requireAuthentication, getCurrentAssociation)
+associationRouter.get(
+  '/associations/current/props',
+  requireAuthentication,
+  requirePermission(PERMISSIONS.SEARCH_PROPS),
+  getCurrentAssociationProps,
+)
 associationRouter.patch(
   '/associations/current',
   requireAuthentication,

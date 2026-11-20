@@ -19,6 +19,26 @@ export interface StorageLocation {
   city: string
 }
 
+export interface AssociationProp {
+  id: string
+  name: string
+  description: string
+  storageLocationId: string
+  availability: boolean
+  dimensions: {
+    height: number
+    width: number
+    depth: number
+    unit: string
+  }
+  quantity: number
+  colour: string
+  placement: string
+  tags: string[]
+  condition: string
+  historicalPeriod: string
+}
+
 export interface UpdateAssociationInput {
   name: string
   contactPerson: AssociationContactPerson
@@ -63,6 +83,36 @@ function isStorageLocation(value: unknown): value is StorageLocation {
     && typeof location.address === 'string'
     && typeof location.postalCode === 'string'
     && typeof location.city === 'string'
+}
+
+function isAssociationProp(value: unknown): value is AssociationProp {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+  const prop = value as Partial<AssociationProp>
+  const dimensions = prop.dimensions
+  return typeof prop.id === 'string'
+    && typeof prop.name === 'string'
+    && typeof prop.description === 'string'
+    && typeof prop.storageLocationId === 'string'
+    && typeof prop.availability === 'boolean'
+    && typeof dimensions === 'object'
+    && dimensions !== null
+    && typeof dimensions.height === 'number'
+    && Number.isFinite(dimensions.height)
+    && typeof dimensions.width === 'number'
+    && Number.isFinite(dimensions.width)
+    && typeof dimensions.depth === 'number'
+    && Number.isFinite(dimensions.depth)
+    && typeof dimensions.unit === 'string'
+    && typeof prop.quantity === 'number'
+    && Number.isFinite(prop.quantity)
+    && typeof prop.colour === 'string'
+    && typeof prop.placement === 'string'
+    && Array.isArray(prop.tags)
+    && prop.tags.every((tag) => typeof tag === 'string')
+    && typeof prop.condition === 'string'
+    && typeof prop.historicalPeriod === 'string'
 }
 
 async function requestAssociation(
@@ -130,6 +180,56 @@ async function requestAssociation(
 
 export function getCurrentAssociation(): Promise<AssociationProfile> {
   return requestAssociation('GET')
+}
+
+export async function getCurrentAssociationProps(): Promise<AssociationProp[]> {
+  const accessToken = sessionStorage.getItem('rekvisit-register.access-token')
+  if (!accessToken) {
+    throw new UnauthorizedError('Du er ikke logget ind.')
+  }
+
+  let response: Response
+  try {
+    response = await fetch('/api/associations/current/props', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+  } catch {
+    throw new Error('Kunne ikke kontakte serveren. Kontrollér, at backend kører.')
+  }
+
+  let body: unknown
+  try {
+    body = await response.json()
+  } catch {
+    throw new Error('Serveren returnerede et ugyldigt svar.')
+  }
+
+  if (response.status === 401) {
+    clearAuthSession()
+    throw new UnauthorizedError('Dit login er udløbet. Log ind igen.')
+  }
+  if (!response.ok) {
+    if (
+      typeof body === 'object'
+      && body !== null
+      && 'error' in body
+      && typeof body.error === 'string'
+    ) {
+      throw new Error(body.error)
+    }
+    throw new Error(`Rekvisitterne kunne ikke hentes (HTTP ${response.status}).`)
+  }
+  if (
+    typeof body !== 'object'
+    || body === null
+    || !('props' in body)
+    || !Array.isArray(body.props)
+    || !body.props.every(isAssociationProp)
+  ) {
+    throw new Error('Serveren returnerede ugyldige rekvisitoplysninger.')
+  }
+
+  return body.props
 }
 
 export function updateCurrentAssociation(

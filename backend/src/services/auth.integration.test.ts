@@ -6,6 +6,7 @@ import { ObjectId } from 'mongodb'
 import type { Server } from 'node:http'
 import test, { after, before, describe } from 'node:test'
 import { closeDatabase, connectToDatabase, getDatabase } from '../config/database.ts'
+import type { PropDocument } from '../models/prop.model.ts'
 import type { StorageLocationDocument } from '../models/storage-location.model.ts'
 import { ROLES, type UserDocument } from '../models/user.model.ts'
 import type { AssociationDocument } from '../models/association.model.ts'
@@ -84,6 +85,27 @@ describe('auth endpoints with MongoDB', () => {
     }
     await getDatabase().collection<AssociationDocument>('associations')
       .insertOne({ _id: expectedAssociationId, ...association })
+    const propId = new ObjectId('6b002a5c3c49f74ff7188de8')
+    const props: PropDocument[] = [
+      {
+        name: 'Træstol',
+        description: 'Mørk træstol med polstret sæde.',
+        associationId: expectedAssociationId,
+        storageLocationId: storageLocationIds[0],
+        availability: true,
+        dimensions: { height: 90, width: 45, depth: 45, unit: 'cm' },
+        quantity: 1,
+        colour: 'Mørkebrun',
+        placement: 'Reol 3',
+        tags: ['stol', 'træstol', 'møbel', 'polstret'],
+        condition: 'God stand med lette brugsspor',
+        historicalPeriod: '1920’erne',
+      },
+    ]
+    await getDatabase().collection<PropDocument>('prop').insertOne({
+      _id: propId,
+      ...props[0],
+    })
     const user: UserDocument = {
       firstName: 'Integration',
       lastName: 'Tester',
@@ -220,6 +242,52 @@ describe('auth endpoints with MongoDB', () => {
     })
 
     assert.equal(response.status, 400)
+  })
+
+  test('requires authentication to list the current association props', async () => {
+    const response = await fetch(`${baseUrl}/associations/current/props`)
+    assert.equal(response.status, 401)
+  })
+
+  test('lists only props belonging to the authenticated association', async () => {
+    assert.ok(authenticatedAccessToken)
+    const foreignAssociationId = new ObjectId()
+    await getDatabase().collection<PropDocument>('prop').insertOne({
+      name: 'Foreign prop',
+      description: 'Belongs to another association.',
+      associationId: foreignAssociationId,
+      storageLocationId: new ObjectId(),
+      availability: true,
+      dimensions: { height: 1, width: 2, depth: 3, unit: 'cm' },
+      quantity: 1,
+      colour: '',
+      placement: '',
+      tags: [],
+      condition: '',
+      historicalPeriod: '',
+    })
+
+    const response = await fetch(`${baseUrl}/associations/current/props`, {
+      headers: { Authorization: 'Bearer ' + authenticatedAccessToken },
+    })
+
+    assert.equal(response.status, 200)
+    assert.deepEqual(await response.json(), {
+      props: [{
+        id: '6b002a5c3c49f74ff7188de8',
+        name: 'Træstol',
+        description: 'Mørk træstol med polstret sæde.',
+        storageLocationId: storageLocationIds[0].toHexString(),
+        availability: true,
+        dimensions: { height: 90, width: 45, depth: 45, unit: 'cm' },
+        quantity: 1,
+        colour: 'Mørkebrun',
+        placement: 'Reol 3',
+        tags: ['stol', 'træstol', 'møbel', 'polstret'],
+        condition: 'God stand med lette brugsspor',
+        historicalPeriod: '1920’erne',
+      }],
+    })
   })
 
   test('returns a generic response for an unknown reset email', async () => {

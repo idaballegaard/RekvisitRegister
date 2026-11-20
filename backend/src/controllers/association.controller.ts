@@ -1,5 +1,6 @@
 import type { RequestHandler } from 'express'
 import { getAuthenticatedUser } from '../middleware/auth.middleware.ts'
+import { AssociationPropsError, getAssociationProps } from '../services/prop.service.ts'
 import {
   AssociationNotFoundError,
   AssociationStorageLocationNotFoundError,
@@ -26,6 +27,20 @@ export const getCurrentAssociation: RequestHandler = async (request, response, n
     }
     if (error instanceof AssociationStorageLocationsError) {
       response.status(500).json({ error: 'En eller flere lageradresser kunne ikke hentes.' })
+      return
+    }
+    next(error)
+  }
+}
+
+export const getCurrentAssociationProps: RequestHandler = async (request, response, next) => {
+  try {
+    const user = getAuthenticatedUser(request)
+    const props = await getAssociationProps(user.associationId)
+    response.json({ props })
+  } catch (error) {
+    if (error instanceof AssociationPropsError) {
+      response.status(500).json({ error: error.message })
       return
     }
     next(error)
