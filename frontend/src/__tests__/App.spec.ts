@@ -194,6 +194,9 @@ describe('AdminView', () => {
     expect(wrapper.text()).toContain('Teatergade 2')
     expect(wrapper.text()).toContain('6700 Esbjerg')
     expect(wrapper.findAll('[aria-label="Foreningens lageradresser"] li')).toHaveLength(2)
+    expect(wrapper.findAll('button').some((button) => (
+      button.text().includes('Tilføj lager') && !button.attributes('disabled')
+    ))).toBe(true)
     expect(wrapper.find('button:disabled').exists()).toBe(true)
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/auth/me')
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
@@ -202,6 +205,174 @@ describe('AdminView', () => {
     expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/associations/current')
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
       method: 'GET',
+      headers: { Authorization: 'Bearer current-test-token' },
+    })
+  })
+
+  it('lets an association admin add a warehouse address', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const newLocation = {
+      id: '6afebf6344bf850bfc30a252',
+      address: 'Havnevej 9',
+      postalCode: '8000',
+      city: 'Aarhus',
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(currentUserResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(associationResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({
+          message: 'Lageradressen er tilføjet.',
+          association: {
+            ...associationResponse.association,
+            storageLocations: [...associationResponse.association.storageLocations, newLocation],
+          },
+        }),
+        { status: 201, headers: { 'Content-Type': 'application/json' } },
+      ))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Thomas Boulund Meng Hansen')
+    })
+    await wrapper.findAll('button')
+      .find((button) => button.text().includes('Tilføj lager'))
+      ?.trigger('click')
+    await wrapper.get('input[name="address"]').setValue('Havnevej 9')
+    await wrapper.get('input[name="postalCode"]').setValue('8000')
+    await wrapper.get('input[name="city"]').setValue('Aarhus')
+    await wrapper.get('#storage-location-form').trigger('submit')
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Lageradressen er tilføjet.')
+      expect(wrapper.text()).toContain('Havnevej 9')
+    })
+    expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/associations/current/storage-locations')
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer current-test-token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        address: 'Havnevej 9',
+        postalCode: '8000',
+        city: 'Aarhus',
+      }),
+    })
+  })
+
+  it('lets an association admin edit a warehouse address', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const updatedAssociation = {
+      ...associationResponse.association,
+      storageLocations: [
+        {
+          ...associationResponse.association.storageLocations[0],
+          address: 'Industrivej 9',
+        },
+        associationResponse.association.storageLocations[1],
+      ],
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(currentUserResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(associationResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({
+          message: 'Lageradressen er opdateret.',
+          association: updatedAssociation,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Industrivej 7')
+    })
+    const firstLocation = wrapper.get('[aria-label="Foreningens lageradresser"] li')
+    await firstLocation.get('button').trigger('click')
+    await firstLocation.get('input[name="editAddress"]').setValue('Industrivej 9')
+    await firstLocation.get('form').trigger('submit')
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Lageradressen er opdateret.')
+      expect(wrapper.text()).toContain('Industrivej 9')
+    })
+    expect(fetchMock.mock.calls[2]?.[0]).toBe(
+      '/api/associations/current/storage-locations/6afebf6344bf850bfc30a250',
+    )
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
+      method: 'PATCH',
+      headers: {
+        Authorization: 'Bearer current-test-token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        address: 'Industrivej 9',
+        postalCode: '6740',
+        city: 'Bramming',
+      }),
+    })
+  })
+
+  it('asks before removing a warehouse address and updates the list', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+    const updatedAssociation = {
+      ...associationResponse.association,
+      storageLocations: [associationResponse.association.storageLocations[1]],
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(currentUserResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify(associationResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({
+          message: 'Lageradressen er fjernet.',
+          association: updatedAssociation,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Industrivej 7')
+    })
+    const firstLocation = wrapper.get('[aria-label="Foreningens lageradresser"] li')
+    await firstLocation.get('button:last-child').trigger('click')
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Lageradressen er fjernet.')
+      expect(wrapper.text()).not.toContain('Industrivej 7')
+    })
+    expect(window.confirm).toHaveBeenCalledWith(
+      'Er du sikker på, at du vil fjerne denne lageradresse?',
+    )
+    expect(fetchMock.mock.calls[2]?.[0]).toBe(
+      '/api/associations/current/storage-locations/6afebf6344bf850bfc30a250',
+    )
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
+      method: 'DELETE',
       headers: { Authorization: 'Bearer current-test-token' },
     })
   })
@@ -242,7 +413,7 @@ describe('AdminView', () => {
     await wrapper.get('input[name="contactName"]').setValue('Updated Contact')
     await wrapper.get('input[name="contactEmail"]').setValue('updated@example.dk')
     await wrapper.get('input[name="contactPhone"]').setValue('+45 12345678')
-    await wrapper.get('#generelt').trigger('submit')
+    await wrapper.get('#association-info-form').trigger('submit')
 
     await vi.waitFor(() => {
       expect(wrapper.text()).toContain('Foreningens oplysninger er opdateret.')

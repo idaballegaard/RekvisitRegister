@@ -249,6 +249,89 @@ export const openApiDocument = {
         },
       },
     },
+    '/associations/current/storage-locations': {
+      post: {
+        summary: 'Tilføj en lageradresse til den indloggede brugers forening',
+        description: 'Kræver rollen associationAdmin.',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['address', 'postalCode', 'city'],
+                properties: {
+                  address: { type: 'string', maxLength: 200 },
+                  postalCode: { type: 'string', maxLength: 20 },
+                  city: { type: 'string', maxLength: 100 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '201': { description: 'Lageradressen blev tilføjet.' },
+          '400': { description: 'Lageradressens oplysninger er ugyldige.' },
+          '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
+          '403': { description: 'Kun foreningsansvarlige må tilføje lageradresser.' },
+          '404': { description: 'Foreningen blev ikke fundet.' },
+        },
+      },
+    },
+    '/associations/current/storage-locations/{locationId}': {
+      patch: {
+        summary: 'Redigér en lageradresse for den indloggede brugers forening',
+        description: 'Kræver rollen associationAdmin. Adressen skal være tilknyttet foreningen.',
+        security: [{ bearerAuth: [] }],
+        parameters: [{
+          name: 'locationId',
+          in: 'path',
+          required: true,
+          schema: { type: 'string', pattern: '^[a-fA-F0-9]{24}$' },
+        }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['address', 'postalCode', 'city'],
+                properties: {
+                  address: { type: 'string', maxLength: 200 },
+                  postalCode: { type: 'string', maxLength: 20 },
+                  city: { type: 'string', maxLength: 100 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Lageradressen blev opdateret.' },
+          '400': { description: 'Lageradressens oplysninger er ugyldige.' },
+          '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
+          '403': { description: 'Kun foreningsansvarlige må ændre lageradresser.' },
+          '404': { description: 'Foreningen eller lageradressen blev ikke fundet.' },
+        },
+      },
+      delete: {
+        summary: 'Fjern en lageradresse fra den indloggede brugers forening',
+        description: 'Kræver rollen associationAdmin. Adressen skal være tilknyttet foreningen.',
+        security: [{ bearerAuth: [] }],
+        parameters: [{
+          name: 'locationId',
+          in: 'path',
+          required: true,
+          schema: { type: 'string', pattern: '^[a-fA-F0-9]{24}$' },
+        }],
+        responses: {
+          '200': { description: 'Lageradressen blev fjernet.' },
+          '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
+          '403': { description: 'Kun foreningsansvarlige må fjerne lageradresser.' },
+          '404': { description: 'Foreningen eller lageradressen blev ikke fundet.' },
+        },
+      },
+    },
     '/auth/profile': {
       patch: {
         summary: 'Opdatér e-mailadressen for den indloggede bruger',

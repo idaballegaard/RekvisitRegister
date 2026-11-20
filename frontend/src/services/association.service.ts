@@ -24,6 +24,12 @@ export interface UpdateAssociationInput {
   contactPerson: AssociationContactPerson
 }
 
+export interface CreateStorageLocationInput {
+  address: string
+  postalCode: string
+  city: string
+}
+
 function isAssociationContactPerson(value: unknown): value is AssociationContactPerson {
   if (typeof value !== 'object' || value === null) {
     return false
@@ -60,17 +66,23 @@ function isStorageLocation(value: unknown): value is StorageLocation {
 }
 
 async function requestAssociation(
-  method: 'GET' | 'PATCH',
-  input?: UpdateAssociationInput,
+  method: 'GET' | 'PATCH' | 'POST' | 'DELETE',
+  input?: UpdateAssociationInput | CreateStorageLocationInput,
+  locationId?: string,
 ): Promise<AssociationProfile> {
   const accessToken = sessionStorage.getItem('rekvisit-register.access-token')
   if (!accessToken) {
     throw new UnauthorizedError('Du er ikke logget ind.')
   }
 
+  const endpoint = locationId
+    ? `/api/associations/current/storage-locations/${encodeURIComponent(locationId)}`
+    : method === 'POST'
+      ? '/api/associations/current/storage-locations'
+      : '/api/associations/current'
   let response: Response
   try {
-    response = await fetch('/api/associations/current', {
+    response = await fetch(endpoint, {
       method,
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -102,7 +114,7 @@ async function requestAssociation(
     ) {
       throw new Error(body.error)
     }
-    throw new Error(`Foreningsoplysningerne kunne ikke hentes (HTTP ${response.status}).`)
+    throw new Error(`Foreningsoplysningerne kunne ikke behandles (HTTP ${response.status}).`)
   }
   if (
     typeof body !== 'object'
@@ -124,4 +136,21 @@ export function updateCurrentAssociation(
   input: UpdateAssociationInput,
 ): Promise<AssociationProfile> {
   return requestAssociation('PATCH', input)
+}
+
+export function createAssociationStorageLocation(
+  input: CreateStorageLocationInput,
+): Promise<AssociationProfile> {
+  return requestAssociation('POST', input)
+}
+
+export function updateAssociationStorageLocation(
+  locationId: string,
+  input: CreateStorageLocationInput,
+): Promise<AssociationProfile> {
+  return requestAssociation('PATCH', input, locationId)
+}
+
+export function deleteAssociationStorageLocation(locationId: string): Promise<AssociationProfile> {
+  return requestAssociation('DELETE', undefined, locationId)
 }

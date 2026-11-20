@@ -1,5 +1,11 @@
 import { Router } from 'express'
-import { getCurrentAssociation, patchCurrentAssociation } from '../controllers/association.controller.ts'
+import {
+  getCurrentAssociation,
+  patchCurrentAssociation,
+  patchCurrentAssociationStorageLocation,
+  deleteCurrentAssociationStorageLocation,
+  postCurrentAssociationStorageLocation,
+} from '../controllers/association.controller.ts'
 import { requireAuthentication, requirePermission } from '../middleware/auth.middleware.ts'
 import { PERMISSIONS } from '../models/user.model.ts'
 
@@ -11,6 +17,24 @@ associationRouter.patch(
   requireAuthentication,
   requirePermission(PERMISSIONS.UPDATE_ASSOCIATION),
   patchCurrentAssociation,
+)
+associationRouter.post(
+  '/associations/current/storage-locations',
+  requireAuthentication,
+  requirePermission(PERMISSIONS.UPDATE_ASSOCIATION),
+  postCurrentAssociationStorageLocation,
+)
+associationRouter.patch(
+  '/associations/current/storage-locations/:locationId',
+  requireAuthentication,
+  requirePermission(PERMISSIONS.UPDATE_ASSOCIATION),
+  patchCurrentAssociationStorageLocation,
+)
+associationRouter.delete(
+  '/associations/current/storage-locations/:locationId',
+  requireAuthentication,
+  requirePermission(PERMISSIONS.UPDATE_ASSOCIATION),
+  deleteCurrentAssociationStorageLocation,
 )
 
 export default associationRouter

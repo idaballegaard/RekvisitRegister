@@ -239,6 +239,20 @@ describe('auth endpoints with MongoDB', () => {
     const unauthenticatedResponse = await fetch(`${baseUrl}/auth/me`)
     assert.equal(unauthenticatedResponse.status, 401)
 
+    const unauthenticatedLocationResponse = await fetch(
+      `${baseUrl}/associations/current/storage-locations`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          address: 'Havnevej 9',
+          postalCode: '8000',
+          city: 'Aarhus',
+        }),
+      },
+    )
+    assert.equal(unauthenticatedLocationResponse.status, 401)
+
     const loginResponse = await fetch(`${baseUrl}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -298,6 +312,23 @@ describe('auth endpoints with MongoDB', () => {
       })
       assert.equal(invalidUpdateResponse.status, 400)
 
+      const invalidLocationResponse = await fetch(
+        `${baseUrl}/associations/current/storage-locations`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + authenticatedAccessToken,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            address: ' ',
+            postalCode: '8000',
+            city: 'Aarhus',
+          }),
+        },
+      )
+      assert.equal(invalidLocationResponse.status, 400)
+
       const updateInput = {
         name: testAssociationName,
         contactPerson: {
@@ -336,6 +367,113 @@ describe('auth endpoints with MongoDB', () => {
         },
       })
 
+      const newLocationInput = {
+        address: 'Havnevej 9',
+        postalCode: '8000',
+        city: 'Aarhus',
+      }
+      const createLocationResponse = await fetch(
+        `${baseUrl}/associations/current/storage-locations`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + authenticatedAccessToken,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(newLocationInput),
+        },
+      )
+      assert.equal(createLocationResponse.status, 201)
+      const createLocationBody = await createLocationResponse.json() as {
+        message: string
+        association: { storageLocations: Array<{ id: string; address: string; postalCode: string; city: string }> }
+      }
+      assert.equal(createLocationBody.message, 'Lageradressen er tilføjet.')
+      assert.equal(createLocationBody.association.storageLocations.length, 3)
+      assert.deepEqual(createLocationBody.association.storageLocations[2], {
+        id: createLocationBody.association.storageLocations[2]?.id,
+        ...newLocationInput,
+      })
+      assert.match(createLocationBody.association.storageLocations[2]?.id ?? '', /^[a-f\d]{24}$/i)
+      const newLocationId = createLocationBody.association.storageLocations[2]?.id
+      assert.ok(newLocationId)
+
+      const otherAssociationId = new ObjectId()
+      await getDatabase().collection<AssociationDocument>('associations').insertOne({
+        _id: otherAssociationId,
+        name: 'Another Theatre',
+        storageLocationIds: [new ObjectId(newLocationId)],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+
+      const editedLocationInput = {
+        address: 'Havnevej 11',
+        postalCode: '8000',
+        city: 'Aarhus C',
+      }
+      const editLocationResponse = await fetch(
+        `${baseUrl}/associations/current/storage-locations/${newLocationId}`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: 'Bearer ' + authenticatedAccessToken,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(editedLocationInput),
+        },
+      )
+      assert.equal(editLocationResponse.status, 200)
+      const editLocationBody = await editLocationResponse.json() as {
+        association: { storageLocations: Array<{ id: string; address: string; postalCode: string; city: string }> }
+      }
+      const editedLocationId = editLocationBody.association.storageLocations[2]?.id
+      assert.ok(editedLocationId)
+      assert.notEqual(editedLocationId, newLocationId)
+      assert.deepEqual(editLocationBody.association.storageLocations[2], {
+        id: editedLocationId,
+        ...editedLocationInput,
+      })
+      assert.deepEqual(
+        await getDatabase().collection<StorageLocationDocument>('storagelocation')
+          .findOne({ _id: new ObjectId(newLocationId) }),
+        { _id: new ObjectId(newLocationId), ...newLocationInput },
+      )
+      const otherAssociationBeforeDelete = await getDatabase()
+        .collection<AssociationDocument>('associations')
+        .findOne({ _id: otherAssociationId })
+      assert.deepEqual(otherAssociationBeforeDelete?.storageLocationIds, [new ObjectId(newLocationId)])
+
+      const unassociatedLocationEditResponse = await fetch(
+        `${baseUrl}/associations/current/storage-locations/${newLocationId}`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: 'Bearer ' + authenticatedAccessToken,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(editedLocationInput),
+        },
+      )
+      assert.equal(unassociatedLocationEditResponse.status, 404)
+
+      const invalidLocationEditResponse = await fetch(
+        `${baseUrl}/associations/current/storage-locations/${newLocationId}`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: 'Bearer ' + authenticatedAccessToken,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            address: '',
+            postalCode: '8000',
+            city: 'Aarhus C',
+          }),
+        },
+      )
+      assert.equal(invalidLocationEditResponse.status, 400)
+
       const managerLoginResponse = await fetch(`${baseUrl}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -355,10 +493,83 @@ describe('auth endpoints with MongoDB', () => {
       })
       assert.equal(forbiddenUpdateResponse.status, 403)
 
+      const forbiddenLocationResponse = await fetch(
+        `${baseUrl}/associations/current/storage-locations`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + associationManagerAccessToken,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(newLocationInput),
+        },
+      )
+      assert.equal(forbiddenLocationResponse.status, 403)
+
+      const forbiddenLocationEditResponse = await fetch(
+        `${baseUrl}/associations/current/storage-locations/${editedLocationId}`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: 'Bearer ' + associationManagerAccessToken,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(editedLocationInput),
+        },
+      )
+      assert.equal(forbiddenLocationEditResponse.status, 403)
+
+      const forbiddenLocationDeleteResponse = await fetch(
+        `${baseUrl}/associations/current/storage-locations/${editedLocationId}`,
+        {
+          method: 'DELETE',
+          headers: { Authorization: 'Bearer ' + associationManagerAccessToken },
+        },
+      )
+      assert.equal(forbiddenLocationDeleteResponse.status, 403)
+
+      const deleteLocationResponse = await fetch(
+        `${baseUrl}/associations/current/storage-locations/${editedLocationId}`,
+        {
+          method: 'DELETE',
+          headers: { Authorization: 'Bearer ' + authenticatedAccessToken },
+        },
+      )
+      assert.equal(deleteLocationResponse.status, 200)
+      const deleteLocationBody = await deleteLocationResponse.json() as {
+        message: string
+        association: { storageLocations: Array<{ id: string }> }
+      }
+      assert.equal(deleteLocationBody.message, 'Lageradressen er fjernet.')
+      assert.equal(deleteLocationBody.association.storageLocations.length, 2)
+      assert.ok(!deleteLocationBody.association.storageLocations.some(
+        (location) => location.id === editedLocationId,
+      ))
+      assert.equal(
+        await getDatabase().collection<StorageLocationDocument>('storagelocation')
+          .findOne({ _id: new ObjectId(editedLocationId) }),
+        null,
+      )
+      assert.ok(await getDatabase().collection<StorageLocationDocument>('storagelocation')
+        .findOne({ _id: new ObjectId(newLocationId) }))
+      const otherAssociation = await getDatabase().collection<AssociationDocument>('associations')
+        .findOne({ _id: otherAssociationId })
+      assert.deepEqual(otherAssociation?.storageLocationIds, [new ObjectId(newLocationId)])
+
+      const missingLocationResponse = await fetch(
+        `${baseUrl}/associations/current/storage-locations/${new ObjectId().toHexString()}`,
+        {
+          method: 'DELETE',
+          headers: { Authorization: 'Bearer ' + authenticatedAccessToken },
+        },
+      )
+      assert.equal(missingLocationResponse.status, 404)
+
       const persistedAssociation = await getDatabase()
         .collection<AssociationDocument>('associations')
         .findOne({ _id: expectedAssociationId })
       assert.deepEqual(persistedAssociation?.contactPerson, updateInput.contactPerson)
+      assert.equal(persistedAssociation?.storageLocationIds?.length, 2)
     }
 
     assert.equal(authenticatedResponse.status, 200)
