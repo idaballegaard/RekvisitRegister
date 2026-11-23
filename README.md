@@ -66,3 +66,19 @@ På profilsiden kan brugeren sende et e-mailbekræftelseslink til sin adresse. F
 ## Backend med TypeScript
 
 Backendens TypeScript-kildekode ligger i `backend/src/` og er opdelt i `config`, `controllers`, `models`, `repositories`, `routes`, `services` og `scripts`. Start udviklingsserveren med `npm --prefix backend run start-dev`, byg med `npm --prefix backend run build`, og kør tests med `npm --prefix backend test`. Auth-integrationstestene bruger en isoleret MongoDB Memory Server og forbinder ikke til din konfigurerede database; første testkørsel kan hente en MongoDB-binary.
+
+## Rekvisitbilleder lokalt
+
+Billeder gemmes som filer i `~/.rekvisit-register/images`. Stien kan ændres med
+`PROP_IMAGE_DIR` i `backend/.env`; den skal være absolut og pege på en privat mappe
+uden for projektet. Backend opretter mappen ved første upload. Sørg for, at den kun
+er tilgængelig for backendens bruger og ikke udstilles som en offentlig webmappe.
+MongoDB gemmer billed-id'er og rækkefølge på rekvisitten. Sikkerhedskopiér både
+databasen og billedmappen; en databasebackup indeholder ikke billedfilerne.
+
+En foreningsansvarlig kan tilføje op til 10 billeder pr. rekvisit og fjerne dem igen.
+JPEG, PNG og WebP på op til 5 MiB pr. fil accepteres. Serveren kontrollerer filens
+indhold, afviser animerede billeder og billeder over 40 millioner pixels og gemmer en
+genkodet WebP uden billedmetadata. Upload og sletning kræver en foreningsansvarlig;
+hentning kræver login og adgang til rekvisitter i samme forening. Det første billede
+vises på rekvisitkortet.

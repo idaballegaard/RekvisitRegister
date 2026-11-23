@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import PropImage from '../components/PropImage.vue'
 import {
   createAssociationStorageLocation,
   deleteAssociationStorageLocation,
@@ -789,11 +790,19 @@ onMounted(async () => {
               @click="openProp(prop.id)"
             >
               <div
-                class="grid h-[120px] place-items-center bg-[#f4f2ef]"
+                class="flex h-[120px] items-center justify-center overflow-hidden bg-[#f4f2ef]"
                 role="img"
                 :aria-label="`Billedområde for ${prop.name}`"
               >
+                <PropImage
+                  v-if="prop.imageIds?.[0]"
+                  :prop-id="prop.id"
+                  :image-id="prop.imageIds[0]"
+                  :alt="`Billede af ${prop.name}`"
+                  fit="cover"
+                />
                 <svg
+                  v-else
                   class="size-6 text-[#a39789]"
                   viewBox="0 0 24 24"
                   fill="none"

@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import express from 'express'
 import { MongoMemoryServer } from 'mongodb-memory-server'
 import { ObjectId } from 'mongodb'
+import sharp from 'sharp'
 import type { Server } from 'node:http'
 import test, { after, before, describe } from 'node:test'
 import { closeDatabase, connectToDatabase, getDatabase } from '../config/database.ts'
@@ -29,6 +33,7 @@ const environmentKeys = [
   'SMTP_USER',
   'SMTP_PASSWORD',
   'SMTP_FROM',
+  'PROP_IMAGE_DIR',
 ] as const
 const originalEnvironment = new Map(
   environmentKeys.map((key) => [key, process.env[key]]),
@@ -43,6 +48,7 @@ let expectedUserId: string
 let reservedEmailUserId: ObjectId
 let authenticatedAccessToken: string
 let associationManagerAccessToken: string
+let imageDirectory: string | undefined
 
 describe('auth endpoints with MongoDB', () => {
   before(async () => {
@@ -58,6 +64,8 @@ describe('auth endpoints with MongoDB', () => {
     process.env.SMTP_USER = 'smtp-user'
     process.env.SMTP_PASSWORD = 'smtp-password'
     process.env.SMTP_FROM = 'Rekvisit Test <no-reply@example.test>'
+    imageDirectory = await mkdtemp(join(tmpdir(), 'rekvisit-images-test-'))
+    process.env.PROP_IMAGE_DIR = imageDirectory
 
     await connectToDatabase()
     expectedAssociationId = new ObjectId()
@@ -167,6 +175,7 @@ describe('auth endpoints with MongoDB', () => {
     }
     await closeDatabase()
     await mongoServer?.stop()
+    if (imageDirectory) await rm(imageDirectory, { recursive: true, force: true })
 
     for (const key of environmentKeys) {
       const originalValue = originalEnvironment.get(key)
@@ -288,6 +297,74 @@ describe('auth endpoints with MongoDB', () => {
         historicalPeriod: '1920’erne',
       }],
     })
+  })
+
+  test('validates, stores, protects, limits and removes prop images', async () => {
+      const propObjectId = new ObjectId()
+      const propId = propObjectId.toHexString()
+      await getDatabase().collection<PropDocument>('prop').insertOne({
+        _id: propObjectId, name: 'Image test', description: '', associationId: expectedAssociationId,
+        storageLocationId: storageLocationIds[0], availability: true,
+        dimensions: { height: 1, width: 1, depth: 1, unit: 'cm' },
+        quantity: 1, colour: '', placement: '', tags: [], condition: '', historicalPeriod: '',
+      })
+      const endpoint = `${baseUrl}/associations/current/props/${propId}/images`
+      const image = await sharp({
+        create: { width: 2, height: 2, channels: 3, background: '#ff0000' },
+      }).png().toBuffer()
+      const auth = { Authorization: 'Bearer ' + authenticatedAccessToken }
+      const upload = (body: Buffer, contentType = 'image/png') => fetch(endpoint, {
+        method: 'POST',
+        headers: { ...auth, 'Content-Type': contentType },
+        body: new Uint8Array(body),
+      })
+
+      assert.equal((await fetch(endpoint, { method: 'POST' })).status, 401)
+      assert.equal((await upload(Buffer.from('not an image'))).status, 400)
+      assert.equal((await upload(image, 'image/jpeg')).status, 400)
+      assert.equal((await upload(image, 'image/svg+xml')).status, 400)
+      assert.equal((await upload(Buffer.alloc(5 * 1024 * 1024 + 1))).status, 413)
+
+      const response = await upload(image)
+      assert.equal(response.status, 201)
+      const { imageId } = await response.json() as { imageId: string }
+      assert.match(imageId, /^[a-f\d]{24}$/)
+      const imageUrl = `${endpoint}/${imageId}`
+      assert.equal((await fetch(imageUrl)).status, 401)
+      const readResponse = await fetch(imageUrl, { headers: auth })
+      assert.equal(readResponse.status, 200)
+      assert.equal(readResponse.headers.get('content-type'), 'image/webp')
+      assert.equal((await sharp(Buffer.from(await readResponse.arrayBuffer())).metadata()).format, 'webp')
+
+      const foreignId = new ObjectId()
+      await getDatabase().collection<PropDocument>('prop').insertOne({
+        name: 'Foreign image prop', description: '', associationId: new ObjectId(),
+        storageLocationId: storageLocationIds[0], availability: true,
+        dimensions: { height: 1, width: 1, depth: 1, unit: 'cm' },
+        quantity: 1, colour: '', placement: '', tags: [], condition: '', historicalPeriod: '',
+        imageIds: [imageId], _id: foreignId,
+      })
+      const foreignUrl = `${baseUrl}/associations/current/props/${foreignId.toHexString()}/images/${imageId}`
+      assert.equal((await fetch(foreignUrl, { headers: auth })).status, 404)
+      assert.equal((await fetch(foreignUrl, { method: 'DELETE', headers: auth })).status, 404)
+      assert.equal((await fetch(`${baseUrl}/associations/current/props/${foreignId.toHexString()}/images`, {
+        method: 'POST', headers: { ...auth, 'Content-Type': 'image/png' }, body: new Uint8Array(image),
+      })).status, 404)
+
+      const uploads = await Promise.all(Array.from({ length: 10 }, () => upload(image)))
+      assert.equal(uploads.filter((result) => result.status === 201).length, 9)
+      assert.equal(uploads.filter((result) => result.status === 400).length, 1)
+      const prop = await getDatabase().collection<PropDocument>('prop').findOne({ _id: new ObjectId(propId) })
+      assert.equal(prop?.imageIds?.length, 10)
+      const listResponse = await fetch(`${baseUrl}/associations/current/props`, { headers: auth })
+      const list = await listResponse.json() as { props: Array<{ id: string; imageIds?: string[] }> }
+      assert.deepEqual(list.props.find((item) => item.id === propId)?.imageIds, prop?.imageIds)
+
+      const deleted = await fetch(imageUrl, { method: 'DELETE', headers: auth })
+      assert.equal(deleted.status, 200)
+      assert.equal((await fetch(imageUrl, { headers: auth })).status, 404)
+      assert.equal((await fetch(imageUrl, { method: 'DELETE', headers: auth })).status, 404)
+      await getDatabase().collection<PropDocument>('prop').deleteOne({ _id: propObjectId })
   })
 
   test('updates only a valid prop owned by the authenticated association', async () => {
@@ -620,6 +697,15 @@ describe('auth endpoints with MongoDB', () => {
       assert.equal(managerLoginResponse.status, 200)
       const managerLoginBody = await managerLoginResponse.json() as { accessToken: string }
       associationManagerAccessToken = managerLoginBody.accessToken
+      const forbiddenImageUpload = await fetch(
+        `${baseUrl}/associations/current/props/6b002a5c3c49f74ff7188de8/images`,
+        {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + associationManagerAccessToken, 'Content-Type': 'image/png' },
+          body: new Uint8Array([1]),
+        },
+      )
+      assert.equal(forbiddenImageUpload.status, 403)
 
       const forbiddenUpdateResponse = await fetch(`${baseUrl}/associations/current`, {
         method: 'PATCH',

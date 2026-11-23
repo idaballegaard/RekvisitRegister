@@ -218,6 +218,73 @@ export const openApiDocument = {
         },
       },
     },
+    '/associations/current/props/{propId}/images': {
+      post: {
+        summary: 'Tilføj et billede til en af foreningens rekvisitter',
+        description: 'Kun foreningsansvarlige. JPEG, PNG eller WebP; højst 5 MiB og 10 billeder pr. rekvisit. Billedet genkodes til WebP.',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'propId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'image/jpeg': { schema: { type: 'string', format: 'binary' } },
+            'image/png': { schema: { type: 'string', format: 'binary' } },
+            'image/webp': { schema: { type: 'string', format: 'binary' } },
+          },
+        },
+        responses: {
+          '201': {
+            description: 'Billedet er tilføjet.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['imageId'],
+                  properties: { imageId: { type: 'string' } },
+                },
+              },
+            },
+          },
+          '400': { description: 'Ugyldigt billede eller billedgrænsen er nået.' },
+          '401': { description: 'Login er påkrævet.' },
+          '403': { description: 'Brugeren må ikke tilføje billeder.' },
+          '404': { description: 'Rekvisitten blev ikke fundet i foreningen.' },
+          '413': { description: 'Billedet er større end 5 MiB.' },
+        },
+      },
+    },
+    '/associations/current/props/{propId}/images/{imageId}': {
+      parameters: [
+        { name: 'propId', in: 'path', required: true, schema: { type: 'string' } },
+        { name: 'imageId', in: 'path', required: true, schema: { type: 'string' } },
+      ],
+      get: {
+        summary: 'Hent et billede af en af foreningens rekvisitter',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Billedet i WebP-format.',
+            content: { 'image/webp': { schema: { type: 'string', format: 'binary' } } },
+          },
+          '401': { description: 'Login er påkrævet.' },
+          '403': { description: 'Brugeren må ikke se rekvisitter.' },
+          '404': { description: 'Billedet blev ikke fundet i foreningen.' },
+        },
+      },
+      delete: {
+        summary: 'Fjern et billede fra en af foreningens rekvisitter',
+        description: 'Kun foreningsansvarlige.',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': { description: 'Billedet er fjernet.' },
+          '401': { description: 'Login er påkrævet.' },
+          '403': { description: 'Brugeren må ikke fjerne billeder.' },
+          '404': { description: 'Billedet blev ikke fundet i foreningen.' },
+        },
+      },
+    },
     '/associations/current/props/{propId}': {
       patch: {
         summary: 'Opdatér en rekvisit i den indloggede brugers forening',
@@ -566,6 +633,11 @@ export const openApiDocument = {
                 tags: { type: 'array', items: { type: 'string' }, example: ['stol', 'træstol'] },
                 condition: { type: 'string', example: 'God stand med lette brugsspor' },
                 historicalPeriod: { type: 'string', example: '1920’erne' },
+                imageIds: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Billed-id’er i visningsrækkefølge. Kan mangle for ældre rekvisitter.',
+                },
               },
             },
             AssociationPropUpdate: {

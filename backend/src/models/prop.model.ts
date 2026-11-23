@@ -20,6 +20,7 @@ export interface PropDocument {
   tags: string[]
   condition: string
   historicalPeriod: string
+  imageIds?: string[]
 }
 
 export interface AssociationProp {
@@ -35,8 +36,9 @@ export interface AssociationProp {
   tags: string[]
   condition: string
   historicalPeriod: string
+  imageIds?: string[]
 }
 
-export type UpdateAssociationPropInput = Omit<PropDocument, 'associationId' | 'storageLocationId'> & {
+export type UpdateAssociationPropInput = Omit<PropDocument, 'associationId' | 'storageLocationId' | 'imageIds'> & {
   storageLocationId: string
 }

@@ -37,9 +37,10 @@ export interface AssociationProp {
   tags: string[]
   condition: string
   historicalPeriod: string
+  imageIds?: string[]
 }
 
-export type UpdateAssociationPropInput = Omit<AssociationProp, 'id'>
+export type UpdateAssociationPropInput = Omit<AssociationProp, 'id' | 'imageIds'>
 
 export interface UpdateAssociationInput {
   name: string
@@ -115,6 +116,71 @@ function isAssociationProp(value: unknown): value is AssociationProp {
     && prop.tags.every((tag) => typeof tag === 'string')
     && typeof prop.condition === 'string'
     && typeof prop.historicalPeriod === 'string'
+    && (prop.imageIds === undefined || (
+      Array.isArray(prop.imageIds)
+      && prop.imageIds.every((id) => typeof id === 'string' && /^[a-f\d]{24}$/.test(id))
+    ))
+}
+
+async function imageRequest(
+  propId: string,
+  method: 'GET' | 'POST' | 'DELETE',
+  imageId?: string,
+  file?: File,
+): Promise<Response> {
+  const accessToken = sessionStorage.getItem('rekvisit-register.access-token')
+  if (!accessToken) throw new UnauthorizedError('Du er ikke logget ind.')
+  const path = `/api/associations/current/props/${encodeURIComponent(propId)}/images`
+  let response: Response
+  try {
+    response = await fetch(imageId ? `${path}/${encodeURIComponent(imageId)}` : path, {
+      method,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        ...(file ? { 'Content-Type': file.type } : {}),
+      },
+      ...(file ? { body: file } : {}),
+    })
+  } catch {
+    throw new Error('Kunne ikke kontakte serveren. Kontrollér, at backend kører.')
+  }
+  if (response.status === 401) {
+    clearAuthSession()
+    throw new UnauthorizedError('Dit login er udløbet. Log ind igen.')
+  }
+  if (!response.ok) {
+    let message = `Billedet kunne ikke behandles (HTTP ${response.status}).`
+    try {
+      const body: unknown = await response.json()
+      if (typeof body === 'object' && body !== null && 'error' in body
+        && typeof body.error === 'string') {
+        message = body.error
+      }
+    } catch {
+      // Some server errors do not have a JSON response.
+    }
+    throw new Error(message)
+  }
+  return response
+}
+
+export async function uploadPropImage(propId: string, file: File): Promise<string> {
+  const response = await imageRequest(propId, 'POST', undefined, file)
+  const body: unknown = await response.json()
+  if (typeof body !== 'object' || body === null || !('imageId' in body)
+    || typeof body.imageId !== 'string' || !/^[a-f\d]{24}$/.test(body.imageId)) {
+    throw new Error('Serveren returnerede et ugyldigt billed-id.')
+  }
+  return body.imageId
+}
+
+export async function getPropImage(propId: string, imageId: string): Promise<Blob> {
+  const response = await imageRequest(propId, 'GET', imageId)
+  return response.blob()
+}
+
+export async function deletePropImage(propId: string, imageId: string): Promise<void> {
+  await imageRequest(propId, 'DELETE', imageId)
 }
 
 async function requestAssociation(

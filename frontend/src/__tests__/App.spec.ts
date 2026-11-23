@@ -1,5 +1,6 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import PropImage from '../components/PropImage.vue'
 import AdminView from '../views/AdminView.vue'
 import LoginView from '../views/LoginView.vue'
 import ProfileView from '../views/ProfileView.vue'
@@ -310,6 +311,7 @@ describe('AdminView', () => {
     expect(firstProp.get('[role="img"]').attributes('aria-label'))
       .toBe('Billedområde for Træstol')
     expect(firstProp.get('[role="img"]').classes()).toContain('h-[120px]')
+    expect(firstProp.get('[role="img"]').classes()).toContain('overflow-hidden')
     expect(firstProp.classes()).toContain('hover:border-brand')
     expect(firstProp.classes()).toContain('hover:shadow-md')
     expect(wrapper.get('[aria-label="Foreningens rekvisitter"]').classes())
@@ -468,6 +470,81 @@ describe('AdminView', () => {
         historicalPeriod: '1920’erne',
       }),
     })
+  })
+
+  it('uploads and removes a prop image and rejects unsupported files', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const imageId = '1234567890abcdef12345678'
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationPropsResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ imageId }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: 'Billedet er fjernet.' }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(PropDetailView, { global: { stubs: { PropImage: true } } })
+    await vi.waitFor(() => expect(wrapper.find('#prop-detail-heading').text()).toBe('Træstol'))
+    expect(wrapper.find('#prop-image-upload').exists()).toBe(false)
+    await wrapper.findAll('button')
+      .find((button) => button.text() === 'Redigér')
+      ?.trigger('click')
+    expect(wrapper.get('form').text()).toContain('Redigér rekvisit')
+    expect(wrapper.get('label[for="prop-image-upload"]').text()).toBe('Tilføj billede')
+    expect(wrapper.get('#prop-image-help').text()).toContain('Billeder gemmes straks')
+
+    const input = wrapper.get<HTMLInputElement>('#prop-image-upload')
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [new File(['test'], 'image.svg', { type: 'image/svg+xml' })],
+    })
+    await input.trigger('change')
+    expect(wrapper.text()).toContain('Vælg et billede i JPEG, PNG eller WebP.')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [new File(['image'], 'image.png', { type: 'image/png' })],
+    })
+    await input.trigger('change')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Billedet er tilføjet.'))
+    expect(fetchMock.mock.calls[3]?.[0]).toBe(
+      '/api/associations/current/props/6b002a5c3c49f74ff7188de8/images',
+    )
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({
+      method: 'POST',
+      headers: { 'Content-Type': 'image/png' },
+    })
+    expect(wrapper.find('form').exists()).toBe(true)
+    await wrapper.findAll('button').find((button) => button.text() === 'Annullér')?.trigger('click')
+    expect(wrapper.find('prop-image-stub').exists()).toBe(true)
+    expect(wrapper.find('#prop-image-upload').exists()).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Fjern billede')).toBe(false)
+    await wrapper.findAll('button').find((button) => button.text() === 'Redigér')?.trigger('click')
+    await wrapper.findAll('button').find((button) => button.text() === 'Fjern billede')?.trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Billedet er fjernet.'))
+    expect(fetchMock.mock.calls[4]?.[0]).toBe(
+      `/api/associations/current/props/6b002a5c3c49f74ff7188de8/images/${imageId}`,
+    )
+  })
+
+  it('displays the first prop image and allows browsing the gallery', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const imageIds = ['1234567890abcdef12345678', 'abcdef123456789012345678']
+    const propsWithImages = {
+      props: [{ ...associationPropsResponse.props[0], imageIds }],
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(propsWithImages), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(PropDetailView, { global: { stubs: { PropImage: true } } })
+    await vi.waitFor(() => expect(wrapper.find('prop-image-stub').exists()).toBe(true))
+    expect(wrapper.getComponent(PropImage).props('imageId')).toBe(imageIds[0])
+    expect(wrapper.text()).toContain('1 / 2')
+    await wrapper.findAll('button').find((button) => button.text() === 'Næste')?.trigger('click')
+    expect(wrapper.getComponent(PropImage).props('imageId')).toBe(imageIds[1])
+    expect(wrapper.text()).toContain('2 / 2')
   })
 
   it('navigates from a prop card to its detail view', async () => {

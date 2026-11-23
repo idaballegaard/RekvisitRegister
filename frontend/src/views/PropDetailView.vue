@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import PropImage from '../components/PropImage.vue'
 import {
+  deletePropImage,
   getCurrentAssociation,
   getCurrentAssociationProps,
+  uploadPropImage,
   updateCurrentAssociationProp,
   type AssociationProfile,
   type AssociationProp,
@@ -26,6 +29,10 @@ const isEditing = ref(false)
 const isSaving = ref(false)
 const saveErrorMessage = ref('')
 const saveSuccessMessage = ref('')
+const imageIndex = ref(0)
+const isUpdatingImage = ref(false)
+const imageErrorMessage = ref('')
+const imageSuccessMessage = ref('')
 const editForm = reactive({
   name: '',
   description: '',
@@ -46,6 +53,7 @@ const propId = computed(() => (
   typeof route.params.propId === 'string' ? route.params.propId : ''
 ))
 const prop = computed(() => props.value?.find(({ id }) => id === propId.value) ?? null)
+const currentImageId = computed(() => prop.value?.imageIds?.[imageIndex.value])
 const roleNames: Record<CurrentUserProfile['role'], string> = {
   associationAdmin: 'Foreningsansvarlig',
   propManager: 'Rekvisitansvarlig',
@@ -57,6 +65,60 @@ function getStorageLocationLabel(locationId: string): string {
   return location
     ? `${location.address}, ${location.postalCode} ${location.city}`
     : 'Lageradresse ikke fundet'
+}
+
+async function uploadImage(event: Event): Promise<void> {
+  const input = event.target
+  if (!(input instanceof HTMLInputElement)) return
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || !prop.value) return
+  imageErrorMessage.value = ''
+  imageSuccessMessage.value = ''
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    imageErrorMessage.value = 'Vælg et billede i JPEG, PNG eller WebP.'
+    return
+  }
+  if (file.size === 0 || file.size > 5 * 1024 * 1024) {
+    imageErrorMessage.value = 'Billedet skal være mellem 1 byte og 5 MB.'
+    return
+  }
+  isUpdatingImage.value = true
+  try {
+    const imageId = await uploadPropImage(prop.value.id, file)
+    prop.value.imageIds = [...(prop.value.imageIds ?? []), imageId]
+    imageIndex.value = prop.value.imageIds.length - 1
+    imageSuccessMessage.value = 'Billedet er tilføjet.'
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      await router.replace({ name: 'login' })
+      return
+    }
+    imageErrorMessage.value = error instanceof Error ? error.message : 'Billedet kunne ikke tilføjes.'
+  } finally {
+    isUpdatingImage.value = false
+  }
+}
+
+async function removeImage(): Promise<void> {
+  if (!prop.value || !currentImageId.value) return
+  isUpdatingImage.value = true
+  imageErrorMessage.value = ''
+  imageSuccessMessage.value = ''
+  try {
+    await deletePropImage(prop.value.id, currentImageId.value)
+    prop.value.imageIds = (prop.value.imageIds ?? []).filter((id) => id !== currentImageId.value)
+    imageIndex.value = Math.max(0, Math.min(imageIndex.value, prop.value.imageIds.length - 1))
+    imageSuccessMessage.value = 'Billedet er fjernet.'
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      await router.replace({ name: 'login' })
+      return
+    }
+    imageErrorMessage.value = error instanceof Error ? error.message : 'Billedet kunne ikke fjernes.'
+  } finally {
+    isUpdatingImage.value = false
+  }
 }
 
 function startEditing(): void {
@@ -79,6 +141,8 @@ function startEditing(): void {
   editForm.historicalPeriod = prop.value.historicalPeriod
   saveErrorMessage.value = ''
   saveSuccessMessage.value = ''
+  imageErrorMessage.value = ''
+  imageSuccessMessage.value = ''
   isEditing.value = true
 }
 
@@ -437,14 +501,14 @@ onMounted(async () => {
               <button
                 class="h-11 rounded-[4px] bg-brand px-5 text-base font-semibold text-white hover:bg-[#7d0202] disabled:cursor-not-allowed disabled:opacity-60"
                 type="submit"
-                :disabled="isSaving"
+                :disabled="isSaving || isUpdatingImage"
               >
                 {{ isSaving ? 'Gemmer…' : 'Gem ændringer' }}
               </button>
               <button
                 class="h-11 rounded border border-gray-light px-5 text-base disabled:opacity-60"
                 type="button"
-                :disabled="isSaving"
+                :disabled="isSaving || isUpdatingImage"
                 @click="cancelEditing"
               >
                 Annullér
@@ -502,12 +566,60 @@ onMounted(async () => {
             </div>
           </div>
         </div>
-        <div
-          class="grid aspect-square w-full max-w-[360px] justify-self-end place-items-center overflow-y-auto overscroll-contain rounded border border-dashed border-gray-light bg-[#fafafa] p-2 text-base text-gray-medium"
-          role="img"
-          :aria-label="`Billedområde for ${prop.name}`"
-        >
-          Billede vises her
+        <div class="w-full max-w-[360px] justify-self-end">
+          <div
+            class="grid aspect-square w-full place-items-center overflow-hidden rounded border border-dashed border-gray-light bg-[#fafafa] p-2 text-base text-gray-medium"
+          >
+            <PropImage
+              v-if="currentImageId"
+              :prop-id="prop.id"
+              :image-id="currentImageId"
+              :alt="`Billede af ${prop.name}`"
+            />
+            <span v-else role="img" :aria-label="`Billedområde for ${prop.name}`">
+              Billede vises her
+            </span>
+          </div>
+          <div v-if="(prop.imageIds?.length ?? 0) > 1" class="mt-3 flex items-center justify-between gap-3">
+            <button type="button" class="text-brand underline disabled:opacity-50" :disabled="imageIndex === 0" @click="imageIndex--">Forrige</button>
+            <span>{{ imageIndex + 1 }} / {{ prop.imageIds?.length }}</span>
+            <button type="button" class="text-brand underline disabled:opacity-50" :disabled="imageIndex >= (prop.imageIds?.length ?? 0) - 1" @click="imageIndex++">Næste</button>
+          </div>
+          <div v-if="isEditing && profile?.role === 'associationAdmin'" class="mt-4 grid gap-3">
+            <input
+              id="prop-image-upload"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              :disabled="isSaving || isUpdatingImage || (prop.imageIds?.length ?? 0) >= 10"
+              aria-describedby="prop-image-help"
+              class="peer sr-only"
+              @change="uploadImage"
+            />
+            <label
+              for="prop-image-upload"
+              class="inline-flex h-11 w-fit cursor-pointer items-center justify-center rounded-[4px] bg-brand px-5 text-base font-semibold text-white hover:bg-[#7d0202] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-brand peer-disabled:cursor-not-allowed peer-disabled:opacity-60"
+            >
+              {{ isUpdatingImage ? 'Behandler billede…' : 'Tilføj billede' }}
+            </label>
+            <p id="prop-image-help" class="text-sm text-gray-medium">
+              JPEG, PNG eller WebP. Højst 5 MB pr. billede og 10 billeder. Billeder gemmes
+              straks, uafhængigt af ændringer i formularen.
+            </p>
+            <p v-if="(prop.imageIds?.length ?? 0) >= 10" class="text-sm text-gray-medium">
+              Du har nået grænsen på 10 billeder.
+            </p>
+            <button
+              v-if="currentImageId"
+              type="button"
+              class="justify-self-start text-base text-brand underline disabled:opacity-50"
+              :disabled="isSaving || isUpdatingImage"
+              @click="removeImage"
+            >
+              Fjern billede
+            </button>
+            <p v-if="imageErrorMessage" class="text-base text-brand" role="alert">{{ imageErrorMessage }}</p>
+            <p v-if="imageSuccessMessage" class="text-base text-green-800" role="status">{{ imageSuccessMessage }}</p>
+          </div>
         </div>
       </article>
       <p v-if="saveSuccessMessage" class="mt-5 text-base text-green-800" role="status">

@@ -162,6 +162,10 @@ function isValidProp(value: unknown): value is WithId<PropDocument> {
     && prop.tags.every((tag) => typeof tag === 'string')
     && typeof prop.condition === 'string'
     && typeof prop.historicalPeriod === 'string'
+    && (prop.imageIds === undefined || (
+      Array.isArray(prop.imageIds)
+      && prop.imageIds.every((id) => typeof id === 'string' && /^[a-f\d]{24}$/.test(id))
+    ))
 }
 
 function toAssociationProp(prop: WithId<PropDocument>): AssociationProp {
@@ -178,5 +182,6 @@ function toAssociationProp(prop: WithId<PropDocument>): AssociationProp {
     tags: prop.tags,
     condition: prop.condition,
     historicalPeriod: prop.historicalPeriod,
+    ...(prop.imageIds ? { imageIds: prop.imageIds } : {}),
   }
 }

@@ -1,4 +1,4 @@
-import { Router } from 'express'
+import { Router, raw } from 'express'
 import {
   getCurrentAssociation,
   getCurrentAssociationProps,
@@ -10,6 +10,7 @@ import {
 } from '../controllers/association.controller.ts'
 import { requireAuthentication, requirePermission } from '../middleware/auth.middleware.ts'
 import { PERMISSIONS } from '../models/user.model.ts'
+import { deleteImage, getImage, imageErrorHandler, uploadImage } from '../controllers/prop-image.controller.ts'
 
 const associationRouter = Router()
 
@@ -19,6 +20,28 @@ associationRouter.get(
   requireAuthentication,
   requirePermission(PERMISSIONS.SEARCH_PROPS),
   getCurrentAssociationProps,
+)
+associationRouter.post(
+  '/associations/current/props/:propId/images',
+  requireAuthentication,
+  requirePermission(PERMISSIONS.UPDATE_ASSOCIATION),
+  raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: 5 * 1024 * 1024 }),
+  uploadImage,
+  imageErrorHandler,
+)
+associationRouter.get(
+  '/associations/current/props/:propId/images/:imageId',
+  requireAuthentication,
+  requirePermission(PERMISSIONS.SEARCH_PROPS),
+  getImage,
+  imageErrorHandler,
+)
+associationRouter.delete(
+  '/associations/current/props/:propId/images/:imageId',
+  requireAuthentication,
+  requirePermission(PERMISSIONS.UPDATE_ASSOCIATION),
+  deleteImage,
+  imageErrorHandler,
 )
 associationRouter.patch(
   '/associations/current/props/:propId',
