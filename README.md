@@ -76,6 +76,12 @@ er tilgængelig for backendens bruger og ikke udstilles som en offentlig webmapp
 MongoDB gemmer billed-id'er og rækkefølge på rekvisitten. Sikkerhedskopiér både
 databasen og billedmappen; en databasebackup indeholder ikke billedfilerne.
 
+En foreningsansvarlig kan oprette en rekvisit via **Egne rekvisitter → Tilføj
+rekvisit**. Foreningen skal først have mindst én lageradresse. Billeder kan vælges
+under oprettelsen og uploades, når rekvisitten er oprettet. Hvis en upload fejler,
+er rekvisitten stadig gemt; kontrollér billederne på detaljesiden og tilføj eventuelt
+manglende billeder via **Redigér**. Billeder kan også tilføjes senere.
+
 En foreningsansvarlig kan tilføje op til 10 billeder pr. rekvisit og fjerne dem igen.
 JPEG, PNG og WebP på op til 5 MiB pr. fil accepteres. Serveren kontrollerer filens
 indhold, afviser animerede billeder og billeder over 40 millioner pixels og gemmer en

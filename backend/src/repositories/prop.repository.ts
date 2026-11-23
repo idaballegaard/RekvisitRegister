@@ -2,6 +2,11 @@ import type { ObjectId, WithId } from 'mongodb'
 import { getDatabase } from '../config/database.ts'
 import type { PropDocument, UpdateAssociationPropInput } from '../models/prop.model.ts'
 
+export async function createProp(prop: PropDocument): Promise<WithId<PropDocument>> {
+  const result = await getDatabase().collection<PropDocument>('prop').insertOne(prop)
+  return { ...prop, _id: result.insertedId }
+}
+
 export async function findPropsByAssociationId(
   associationId: ObjectId,
 ): Promise<WithId<PropDocument>[]> {

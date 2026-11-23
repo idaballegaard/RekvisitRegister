@@ -304,6 +304,20 @@ export async function updateCurrentAssociationProp(
   propId: string,
   input: UpdateAssociationPropInput,
 ): Promise<AssociationProp> {
+  return saveCurrentAssociationProp('PATCH', input, propId)
+}
+
+export async function createCurrentAssociationProp(
+  input: UpdateAssociationPropInput,
+): Promise<AssociationProp> {
+  return saveCurrentAssociationProp('POST', input)
+}
+
+async function saveCurrentAssociationProp(
+  method: 'POST' | 'PATCH',
+  input: UpdateAssociationPropInput,
+  propId?: string,
+): Promise<AssociationProp> {
   const accessToken = sessionStorage.getItem('rekvisit-register.access-token')
   if (!accessToken) {
     throw new UnauthorizedError('Du er ikke logget ind.')
@@ -312,9 +326,11 @@ export async function updateCurrentAssociationProp(
   let response: Response
   try {
     response = await fetch(
-      `/api/associations/current/props/${encodeURIComponent(propId)}`,
+      propId
+        ? `/api/associations/current/props/${encodeURIComponent(propId)}`
+        : '/api/associations/current/props',
       {
-        method: 'PATCH',
+        method,
         headers: {
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',

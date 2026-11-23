@@ -330,6 +330,174 @@ describe('AdminView', () => {
     })
   })
 
+  it('opens the prop creation form from the overview', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ props: [] }), { status: 200 })))
+    const wrapper = mount(AdminView)
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Kontaktoplysninger'))
+    await wrapper.findAll('button').find((button) => button.text() === 'Egne rekvisitter')?.trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Tilføj rekvisit'))
+    await wrapper.findAll('button').find((button) => button.text() === 'Tilføj rekvisit')?.trigger('click')
+    expect(routerPush).toHaveBeenCalledWith({ name: 'admin-prop-create' })
+  })
+
+  it('creates a prop and opens its detail page', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const createdProp = associationPropsResponse.props[0]
+    if (!createdProp) throw new Error('Testrekvisit mangler.')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ prop: createdProp }), { status: 201 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(PropDetailView, { props: { mode: 'create' } })
+    await vi.waitFor(() => expect(wrapper.find('#prop-name').exists()).toBe(true))
+    expect(wrapper.get('label[for="prop-create-images"]').text()).toBe('Tilføj billeder')
+    expect(wrapper.find('#prop-image-upload').exists()).toBe(false)
+    await wrapper.get('#prop-name').setValue('Træstol')
+    await wrapper.get('#prop-description').setValue(createdProp.description)
+    await wrapper.get('input[aria-label="Højde"]').setValue('90')
+    await wrapper.get('input[aria-label="Bredde"]').setValue('45')
+    await wrapper.get('input[aria-label="Dybde"]').setValue('45')
+    await wrapper.get('#prop-storage-location').setValue(createdProp.storageLocationId)
+    await wrapper.get('form').trigger('submit')
+    await vi.waitFor(() => expect(routerPush).toHaveBeenCalledWith({
+      name: 'admin-prop-detail',
+      params: { propId: createdProp.id },
+    }))
+    expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/associations/current/props')
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'Træstol',
+        description: createdProp.description,
+        storageLocationId: createdProp.storageLocationId,
+        availability: true,
+        dimensions: { height: 90, width: 45, depth: 45, unit: 'cm' },
+        quantity: 1, colour: '', placement: '', tags: [], condition: '', historicalPeriod: '',
+      }),
+    })
+  })
+
+  it('uploads selected images after creating the prop', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const createdProp = associationPropsResponse.props[0]
+    if (!createdProp) throw new Error('Testrekvisit mangler.')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ prop: createdProp }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ imageId: '1234567890abcdef12345678' }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ imageId: 'abcdef123456789012345678' }), { status: 201 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(PropDetailView, { props: { mode: 'create' } })
+    await vi.waitFor(() => expect(wrapper.find('#prop-create-images').exists()).toBe(true))
+    const input = wrapper.get<HTMLInputElement>('#prop-create-images')
+    const files = [
+      new File(['first'], 'first.png', { type: 'image/png' }),
+      new File(['second'], 'second.jpg', { type: 'image/jpeg' }),
+    ]
+    Object.defineProperty(input.element, 'files', { configurable: true, value: files })
+    await input.trigger('change')
+    expect(wrapper.get('[aria-label="Valgte billeder"]').text()).toContain('first.png')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    await wrapper.get('form').trigger('submit')
+    await vi.waitFor(() => expect(routerPush).toHaveBeenCalledWith({
+      name: 'admin-prop-detail', params: { propId: createdProp.id },
+    }))
+    expect(fetchMock.mock.calls[3]?.[0]).toBe(`/api/associations/current/props/${createdProp.id}/images`)
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({ method: 'POST', body: files[0] })
+    expect(fetchMock.mock.calls[4]?.[1]).toMatchObject({ method: 'POST', body: files[1] })
+  })
+
+  it('shows failed image upload without creating a duplicate prop', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const createdProp = associationPropsResponse.props[0]
+    if (!createdProp) throw new Error('Testrekvisit mangler.')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ prop: createdProp }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ imageId: '1234567890abcdef12345678' }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'Ugyldigt billede.' }), { status: 400 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(PropDetailView, { props: { mode: 'create' } })
+    await vi.waitFor(() => expect(wrapper.find('#prop-create-images').exists()).toBe(true))
+    const input = wrapper.get<HTMLInputElement>('#prop-create-images')
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [
+        new File(['ok'], 'good.png', { type: 'image/png' }),
+        new File(['bad'], 'bad.png', { type: 'image/png' }),
+      ],
+    })
+    await input.trigger('change')
+    await wrapper.get('form').trigger('submit')
+    await vi.waitFor(() => expect(wrapper.get('[role="alert"]').text()).toContain('Rekvisitten er oprettet'))
+    expect(wrapper.get('[role="alert"]').text()).toContain('bad.png')
+    expect(wrapper.get('[role="alert"]').text()).toContain('1 af 2 billeder blev bekræftet')
+    expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('form').trigger('submit')
+    expect(fetchMock).toHaveBeenCalledTimes(5)
+    await wrapper.findAll('button').find((button) => button.text() === 'Åbn den oprettede rekvisit')?.trigger('click')
+    expect(routerPush).toHaveBeenCalledWith({ name: 'admin-prop-detail', params: { propId: createdProp.id } })
+  })
+
+  it('validates and removes selected images before creating a prop', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 })))
+    const wrapper = mount(PropDetailView, { props: { mode: 'create' } })
+    await vi.waitFor(() => expect(wrapper.find('#prop-create-images').exists()).toBe(true))
+    const input = wrapper.get<HTMLInputElement>('#prop-create-images')
+    const choose = async (files: File[]) => {
+      Object.defineProperty(input.element, 'files', { configurable: true, value: files })
+      await input.trigger('change')
+    }
+    await choose([new File(['bad'], 'bad.svg', { type: 'image/svg+xml' })])
+    expect(wrapper.get('[role="alert"]').text()).toContain('JPEG, PNG eller WebP')
+    await choose([new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'big.png', { type: 'image/png' })])
+    expect(wrapper.get('[role="alert"]').text()).toContain('5 MB')
+    await choose(Array.from({ length: 11 }, (_, i) => new File(['x'], `${i}.png`, { type: 'image/png' })))
+    expect(wrapper.get('[role="alert"]').text()).toContain('højst have 10')
+    await choose([new File(['x'], 'valid.png', { type: 'image/png' })])
+    expect(wrapper.get('[aria-label="Valgte billeder"]').text()).toContain('valid.png')
+    await wrapper.get('button[aria-label="Fjern valid.png"]').trigger('click')
+    expect(wrapper.find('[aria-label="Valgte billeder"]').exists()).toBe(false)
+  })
+
+  it('shows creation errors and allows cancelling', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'Ugyldige oplysninger.' }), { status: 400 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(PropDetailView, { props: { mode: 'create' } })
+    await vi.waitFor(() => expect(wrapper.find('#prop-name').exists()).toBe(true))
+    await wrapper.get('form').trigger('submit')
+    await vi.waitFor(() => expect(wrapper.get('[role="alert"]').text()).toBe('Ugyldige oplysninger.'))
+    await wrapper.findAll('button').find((button) => button.text() === 'Annullér')?.trigger('click')
+    expect(routerPush).toHaveBeenCalledWith({ name: 'admin', query: { tab: 'props', q: 'stol' } })
+  })
+
+  it('explains that a warehouse is needed before creating a prop', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        association: { ...associationResponse.association, storageLocations: [] },
+      }), { status: 200 })))
+    const wrapper = mount(PropDetailView, { props: { mode: 'create' } })
+    await vi.waitFor(() => expect(wrapper.find('#prop-name').exists()).toBe(true))
+    expect(wrapper.get('[role="alert"]').text()).toContain('Tilføj først en lageradresse')
+    expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()
+  })
+
   it('navigates from a prop card to its detail view', async () => {
     sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
     const fetchMock = vi.fn()

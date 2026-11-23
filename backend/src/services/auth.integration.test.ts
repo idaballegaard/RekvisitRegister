@@ -299,6 +299,51 @@ describe('auth endpoints with MongoDB', () => {
     })
   })
 
+  test('creates a validated prop for the authenticated association', async () => {
+    const url = `${baseUrl}/associations/current/props`
+    const input = {
+      name: ' Ny rekvisit ', description: 'En beskrivelse',
+      storageLocationId: storageLocationIds[0].toHexString(), availability: true,
+      dimensions: { height: 10, width: 20, depth: 30, unit: 'cm' },
+      quantity: 1, colour: 'Blå', placement: 'Reol 1', tags: ['teater'],
+      condition: 'God', historicalPeriod: '',
+    }
+    const headers = {
+      Authorization: 'Bearer ' + authenticatedAccessToken,
+      'Content-Type': 'application/json',
+    }
+    assert.equal((await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    })).status, 401)
+    for (const invalid of [
+      { ...input, name: '' },
+      { ...input, quantity: 0 },
+      { ...input, dimensions: { ...input.dimensions, width: -1 } },
+      { ...input, storageLocationId: new ObjectId().toHexString() },
+    ]) {
+      assert.equal((await fetch(url, {
+        method: 'POST', headers, body: JSON.stringify(invalid),
+      })).status, 400)
+    }
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ ...input, associationId: new ObjectId().toHexString(), imageIds: ['bad'] }),
+    })
+    assert.equal(response.status, 201)
+    const body = await response.json() as { prop: { id: string; name: string; imageIds?: string[] } }
+    assert.equal(body.prop.name, 'Ny rekvisit')
+    assert.equal(body.prop.imageIds, undefined)
+    const stored = await getDatabase().collection<PropDocument>('prop')
+      .findOne({ _id: new ObjectId(body.prop.id) })
+    assert.ok(stored?.associationId.equals(expectedAssociationId))
+    assert.ok(stored?.storageLocationId.equals(storageLocationIds[0]))
+    const listResponse = await fetch(url, { headers })
+    const list = await listResponse.json() as { props: Array<{ id: string }> }
+    assert.ok(list.props.some(({ id }) => id === body.prop.id))
+    await getDatabase().collection<PropDocument>('prop').deleteOne({ _id: new ObjectId(body.prop.id) })
+  })
+
   test('validates, stores, protects, limits and removes prop images', async () => {
       const propObjectId = new ObjectId()
       const propId = propObjectId.toHexString()
@@ -697,6 +742,15 @@ describe('auth endpoints with MongoDB', () => {
       assert.equal(managerLoginResponse.status, 200)
       const managerLoginBody = await managerLoginResponse.json() as { accessToken: string }
       associationManagerAccessToken = managerLoginBody.accessToken
+      const forbiddenPropCreate = await fetch(`${baseUrl}/associations/current/props`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + associationManagerAccessToken,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      })
+      assert.equal(forbiddenPropCreate.status, 403)
       const forbiddenImageUpload = await fetch(
         `${baseUrl}/associations/current/props/6b002a5c3c49f74ff7188de8/images`,
         {

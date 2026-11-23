@@ -112,6 +112,10 @@ async function openProp(propId: string): Promise<void> {
   })
 }
 
+async function createProp(): Promise<void> {
+  await router.push({ name: 'admin-prop-create' })
+}
+
 function openGeneralTab(): void {
   activeTab.value = 'general'
 }
@@ -743,6 +747,14 @@ onMounted(async () => {
               Find foreningens rekvisitter.
             </p>
           </div>
+          <button
+            v-if="profile.role === 'associationAdmin'"
+            type="button"
+            class="h-11 rounded-[4px] bg-brand px-5 text-base font-semibold text-white hover:bg-[#7d0202] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            @click="createProp"
+          >
+            Tilføj rekvisit
+          </button>
         </div>
         <div class="mb-6 flex flex-wrap items-center justify-between gap-5">
           <label class="grid w-full max-w-[32rem] gap-2 text-base text-gray-medium" for="prop-search">

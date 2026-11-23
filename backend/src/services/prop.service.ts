@@ -6,6 +6,7 @@ import type {
 } from '../models/prop.model.ts'
 import { findAssociationById } from '../repositories/association.repository.ts'
 import {
+  createProp,
   findPropsByAssociationId,
   updatePropByIdForAssociation,
 } from '../repositories/prop.repository.ts'
@@ -99,6 +100,31 @@ export async function getAssociationProps(associationId: string): Promise<Associ
   return props.map(toAssociationProp)
 }
 
+async function validateStorageLocation(associationId: ObjectId, locationId: ObjectId): Promise<void> {
+  const association = await findAssociationById(associationId)
+  if (!association?.storageLocationIds?.some((id) => id.equals(locationId))) {
+    throw new AssociationPropStorageLocationNotFoundError()
+  }
+}
+
+export async function createAssociationProp(
+  associationId: string,
+  input: UpdateAssociationPropInput,
+): Promise<AssociationProp> {
+  if (!/^[a-f\d]{24}$/i.test(associationId)) {
+    throw new AssociationPropsError('Forenings-id’et er ugyldigt.')
+  }
+  const associationObjectId = new ObjectId(associationId)
+  const storageLocationId = new ObjectId(input.storageLocationId)
+  await validateStorageLocation(associationObjectId, storageLocationId)
+  const prop = await createProp({
+    ...input,
+    associationId: associationObjectId,
+    storageLocationId,
+  })
+  return toAssociationProp(prop)
+}
+
 export async function updateAssociationProp(
   associationId: string,
   propId: string,
@@ -109,11 +135,8 @@ export async function updateAssociationProp(
   }
   const associationObjectId = new ObjectId(associationId)
   const normalizedPropId = new ObjectId(propId).toHexString()
-  const association = await findAssociationById(associationObjectId)
   const storageLocationId = new ObjectId(input.storageLocationId)
-  if (!association?.storageLocationIds?.some((id) => id.equals(storageLocationId))) {
-    throw new AssociationPropStorageLocationNotFoundError()
-  }
+  await validateStorageLocation(associationObjectId, storageLocationId)
 
   const { storageLocationId: _, ...rest } = input
   const updated = await updatePropByIdForAssociation(

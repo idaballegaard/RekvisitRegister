@@ -26,6 +26,12 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/admin/props/new',
+      name: 'admin-prop-create',
+      component: () => import('../views/PropCreateView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/admin/props/:propId',
       name: 'admin-prop-detail',
       component: () => import('../views/PropDetailView.vue'),

@@ -2,6 +2,7 @@ import { Router, raw } from 'express'
 import {
   getCurrentAssociation,
   getCurrentAssociationProps,
+  postCurrentAssociationProp,
   patchCurrentAssociationProp,
   patchCurrentAssociation,
   patchCurrentAssociationStorageLocation,
@@ -20,6 +21,12 @@ associationRouter.get(
   requireAuthentication,
   requirePermission(PERMISSIONS.SEARCH_PROPS),
   getCurrentAssociationProps,
+)
+associationRouter.post(
+  '/associations/current/props',
+  requireAuthentication,
+  requirePermission(PERMISSIONS.UPDATE_ASSOCIATION),
+  postCurrentAssociationProp,
 )
 associationRouter.post(
   '/associations/current/props/:propId/images',

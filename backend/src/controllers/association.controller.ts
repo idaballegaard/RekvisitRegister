@@ -4,6 +4,7 @@ import {
   AssociationPropNotFoundError,
   AssociationPropStorageLocationNotFoundError,
   AssociationPropsError,
+  createAssociationProp,
   getAssociationProps,
   InvalidAssociationPropInputError,
   updateAssociationProp,
@@ -47,6 +48,28 @@ export const getCurrentAssociationProps: RequestHandler = async (request, respon
     const props = await getAssociationProps(user.associationId)
     response.json({ props })
   } catch (error) {
+    if (error instanceof AssociationPropsError) {
+      response.status(500).json({ error: error.message })
+      return
+    }
+    next(error)
+  }
+}
+
+export const postCurrentAssociationProp: RequestHandler = async (request, response, next) => {
+  try {
+    const input = validateUpdateAssociationPropInput(request.body)
+    const prop = await createAssociationProp(getAuthenticatedUser(request).associationId, input)
+    response.status(201).json({ message: 'Rekvisitten er oprettet.', prop })
+  } catch (error) {
+    if (error instanceof InvalidAssociationPropInputError) {
+      response.status(400).json({ error: error.message })
+      return
+    }
+    if (error instanceof AssociationPropStorageLocationNotFoundError) {
+      response.status(400).json({ error: 'Vælg en lageradresse fra din forening.' })
+      return
+    }
     if (error instanceof AssociationPropsError) {
       response.status(500).json({ error: error.message })
       return

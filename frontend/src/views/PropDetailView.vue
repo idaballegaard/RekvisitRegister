@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import PropImage from '../components/PropImage.vue'
 import {
   deletePropImage,
+  createCurrentAssociationProp,
   getCurrentAssociation,
   getCurrentAssociationProps,
   uploadPropImage,
@@ -18,6 +19,8 @@ import {
   type CurrentUserProfile,
 } from '../services/auth.service'
 
+const viewProps = defineProps<{ mode?: 'create' }>()
+const isCreating = viewProps.mode === 'create'
 const route = useRoute()
 const router = useRouter()
 const profile = ref<CurrentUserProfile | null>(null)
@@ -25,22 +28,24 @@ const association = ref<AssociationProfile | null>(null)
 const props = ref<AssociationProp[] | null>(null)
 const isLoading = ref(true)
 const errorMessage = ref('')
-const isEditing = ref(false)
+const isEditing = ref(isCreating)
 const isSaving = ref(false)
+const createdPropId = ref('')
 const saveErrorMessage = ref('')
 const saveSuccessMessage = ref('')
 const imageIndex = ref(0)
 const isUpdatingImage = ref(false)
 const imageErrorMessage = ref('')
 const imageSuccessMessage = ref('')
+const selectedImages = ref<File[]>([])
 const editForm = reactive({
   name: '',
   description: '',
   storageLocationId: '',
   availability: true,
-  height: 0,
-  width: 0,
-  depth: 0,
+  height: '' as number | '',
+  width: '' as number | '',
+  depth: '' as number | '',
   unit: 'cm',
   quantity: 1,
   colour: '',
@@ -52,7 +57,14 @@ const editForm = reactive({
 const propId = computed(() => (
   typeof route.params.propId === 'string' ? route.params.propId : ''
 ))
-const prop = computed(() => props.value?.find(({ id }) => id === propId.value) ?? null)
+const newProp: AssociationProp = {
+  id: '', name: '', description: '', storageLocationId: '', availability: true,
+  dimensions: { height: 0, width: 0, depth: 0, unit: 'cm' }, quantity: 1,
+  colour: '', placement: '', tags: [], condition: '', historicalPeriod: '',
+}
+const prop = computed(() => isCreating && association.value
+  ? newProp
+  : props.value?.find(({ id }) => id === propId.value) ?? null)
 const currentImageId = computed(() => prop.value?.imageIds?.[imageIndex.value])
 const roleNames: Record<CurrentUserProfile['role'], string> = {
   associationAdmin: 'Foreningsansvarlig',
@@ -65,6 +77,33 @@ function getStorageLocationLabel(locationId: string): string {
   return location
     ? `${location.address}, ${location.postalCode} ${location.city}`
     : 'Lageradresse ikke fundet'
+}
+
+function selectImages(event: Event): void {
+  const input = event.target
+  if (!(input instanceof HTMLInputElement)) return
+  const files = Array.from(input.files ?? [])
+  input.value = ''
+  if (!files.length) return
+  imageErrorMessage.value = ''
+  if (selectedImages.value.length + files.length > 10) {
+    imageErrorMessage.value = 'En rekvisit kan højst have 10 billeder.'
+    return
+  }
+  if (files.some((file) => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type))) {
+    imageErrorMessage.value = 'Vælg billeder i JPEG, PNG eller WebP.'
+    return
+  }
+  if (files.some((file) => file.size === 0 || file.size > 5 * 1024 * 1024)) {
+    imageErrorMessage.value = 'Hvert billede skal være mellem 1 byte og 5 MB.'
+    return
+  }
+  selectedImages.value.push(...files)
+}
+
+function removeSelectedImage(index: number): void {
+  selectedImages.value.splice(index, 1)
+  imageErrorMessage.value = ''
 }
 
 async function uploadImage(event: Event): Promise<void> {
@@ -147,19 +186,23 @@ function startEditing(): void {
 }
 
 function cancelEditing(): void {
+  if (isCreating) {
+    void backToProps()
+    return
+  }
   isEditing.value = false
   saveErrorMessage.value = ''
 }
 
 async function saveProp(): Promise<void> {
-  if (!prop.value || profile.value?.role !== 'associationAdmin') {
+  if (!prop.value || profile.value?.role !== 'associationAdmin' || createdPropId.value) {
     return
   }
   saveErrorMessage.value = ''
   saveSuccessMessage.value = ''
   isSaving.value = true
   try {
-    const updatedProp = await updateCurrentAssociationProp(prop.value.id, {
+    const input = {
       name: editForm.name,
       description: editForm.description,
       storageLocationId: editForm.storageLocationId,
@@ -176,7 +219,23 @@ async function saveProp(): Promise<void> {
       tags: editForm.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
       condition: editForm.condition,
       historicalPeriod: editForm.historicalPeriod,
-    })
+    }
+    if (isCreating) {
+      const createdProp = await createCurrentAssociationProp(input)
+      createdPropId.value = createdProp.id
+      for (const [index, file] of selectedImages.value.entries()) {
+        try {
+          await uploadPropImage(createdProp.id, file)
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Ukendt fejl.'
+          saveErrorMessage.value = `Rekvisitten er oprettet, men upload af "${file.name}" fejlede: ${message} ${index} af ${selectedImages.value.length} billeder blev bekræftet. Åbn rekvisitten for at kontrollere og tilføje de manglende billeder.`
+          return
+        }
+      }
+      await openCreatedProp()
+      return
+    }
+    const updatedProp = await updateCurrentAssociationProp(prop.value.id, input)
     props.value = (props.value ?? []).map((item) => item.id === updatedProp.id ? updatedProp : item)
     isEditing.value = false
     saveSuccessMessage.value = 'Rekvisitten er opdateret.'
@@ -190,6 +249,20 @@ async function saveProp(): Promise<void> {
       : 'Rekvisitten kunne ikke gemmes.'
   } finally {
     isSaving.value = false
+  }
+}
+
+async function openCreatedProp(): Promise<void> {
+  try {
+    const failure = await router.push({
+      name: 'admin-prop-detail',
+      params: { propId: createdPropId.value },
+    })
+    if (failure) {
+      saveErrorMessage.value = 'Rekvisitten er oprettet, men detaljesiden kunne ikke åbnes.'
+    }
+  } catch {
+    saveErrorMessage.value = 'Rekvisitten er oprettet, men detaljesiden kunne ikke åbnes.'
   }
 }
 
@@ -220,12 +293,16 @@ onMounted(async () => {
       return
     }
     profile.value = currentUser
-    const [currentAssociation, currentProps] = await Promise.all([
-      getCurrentAssociation(),
-      getCurrentAssociationProps(),
-    ])
-    association.value = currentAssociation
-    props.value = currentProps
+    if (isCreating) {
+      association.value = await getCurrentAssociation()
+    } else {
+      const [currentAssociation, currentProps] = await Promise.all([
+        getCurrentAssociation(),
+        getCurrentAssociationProps(),
+      ])
+      association.value = currentAssociation
+      props.value = currentProps
+    }
   } catch (error) {
     if (error instanceof UnauthorizedError) {
       await router.replace({ name: 'login' })
@@ -350,7 +427,13 @@ onMounted(async () => {
             </div>
           </div>
           <form v-if="isEditing" class="mt-5 grid gap-5" @submit.prevent="saveProp">
-            <h2 id="prop-detail-heading" class="text-2xl font-bold">Redigér rekvisit</h2>
+            <h2 id="prop-detail-heading" class="text-2xl font-bold">
+              {{ isCreating ? 'Tilføj rekvisit' : 'Redigér rekvisit' }}
+            </h2>
+            <p v-if="isCreating && association?.storageLocations.length === 0" class="text-base text-brand" role="alert">
+              Tilføj først en lageradresse under Generelt, før du opretter en rekvisit.
+            </p>
+            <fieldset :disabled="isSaving || !!createdPropId" class="grid gap-5">
             <div class="grid gap-2">
               <label for="prop-name" class="text-base text-gray-medium">Navn</label>
               <input
@@ -462,6 +545,7 @@ onMounted(async () => {
                   class="h-11 rounded border border-gray-light px-3 text-base focus-visible:outline-2 focus-visible:outline-brand"
                   required
                 >
+                  <option value="" disabled>Vælg lageradresse</option>
                   <option
                     v-for="location in association?.storageLocations ?? []"
                     :key="location.id"
@@ -494,16 +578,25 @@ onMounted(async () => {
               <input v-model="editForm.availability" type="checkbox" class="size-4 accent-brand" />
               Tilgængelig
             </label>
+            </fieldset>
             <p v-if="saveErrorMessage" class="text-base text-brand" role="alert">
               {{ saveErrorMessage }}
             </p>
+            <button
+              v-if="createdPropId"
+              type="button"
+              class="justify-self-start text-brand underline"
+              @click="openCreatedProp"
+            >
+              Åbn den oprettede rekvisit
+            </button>
             <div class="flex flex-wrap gap-3">
               <button
                 class="h-11 rounded-[4px] bg-brand px-5 text-base font-semibold text-white hover:bg-[#7d0202] disabled:cursor-not-allowed disabled:opacity-60"
                 type="submit"
-                :disabled="isSaving || isUpdatingImage"
+                :disabled="isSaving || isUpdatingImage || !!createdPropId || (isCreating && !association?.storageLocations.length)"
               >
-                {{ isSaving ? 'Gemmer…' : 'Gem ændringer' }}
+                {{ isSaving ? 'Gemmer…' : isCreating ? 'Opret rekvisit' : 'Gem ændringer' }}
               </button>
               <button
                 class="h-11 rounded border border-gray-light px-5 text-base disabled:opacity-60"
@@ -566,7 +659,52 @@ onMounted(async () => {
             </div>
           </div>
         </div>
-        <div class="w-full max-w-[360px] justify-self-end">
+        <div v-if="isCreating" class="w-full max-w-[360px] justify-self-end">
+          <div class="grid aspect-square w-full place-items-center rounded border border-dashed border-gray-light bg-[#fafafa] p-4 text-center text-base text-gray-medium">
+            Vælg billeder til rekvisitten
+          </div>
+          <div class="mt-4 grid gap-3">
+            <input
+              id="prop-create-images"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              :disabled="isSaving || !!createdPropId || selectedImages.length >= 10"
+              aria-describedby="prop-create-images-help"
+              class="peer sr-only"
+              @change="selectImages"
+            />
+            <label
+              for="prop-create-images"
+              class="inline-flex h-11 w-fit cursor-pointer items-center justify-center rounded-[4px] bg-brand px-5 text-base font-semibold text-white hover:bg-[#7d0202] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-brand peer-disabled:cursor-not-allowed peer-disabled:opacity-60"
+            >
+              Tilføj billeder
+            </label>
+            <p id="prop-create-images-help" class="text-sm text-gray-medium">
+              JPEG, PNG eller WebP. Højst 5 MB pr. billede og 10 billeder. Billederne uploades,
+              når rekvisitten oprettes.
+            </p>
+            <p v-if="selectedImages.length >= 10" class="text-sm text-gray-medium">
+              Du har valgt 10 billeder.
+            </p>
+            <ul v-if="selectedImages.length" aria-label="Valgte billeder" class="grid gap-2">
+              <li v-for="(file, index) in selectedImages" :key="index" class="flex items-center justify-between gap-3">
+                <span class="min-w-0 break-all text-sm">{{ file.name }}</span>
+                <button
+                  type="button"
+                  class="shrink-0 text-sm text-brand underline disabled:opacity-50"
+                  :aria-label="`Fjern ${file.name}`"
+                  :disabled="isSaving || !!createdPropId"
+                  @click="removeSelectedImage(index)"
+                >
+                  Fjern
+                </button>
+              </li>
+            </ul>
+            <p v-if="imageErrorMessage" class="text-base text-brand" role="alert">{{ imageErrorMessage }}</p>
+          </div>
+        </div>
+        <div v-else class="w-full max-w-[360px] justify-self-end">
           <div
             class="grid aspect-square w-full place-items-center overflow-hidden rounded border border-dashed border-gray-light bg-[#fafafa] p-2 text-base text-gray-medium"
           >

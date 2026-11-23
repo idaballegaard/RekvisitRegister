@@ -191,6 +191,39 @@ export const openApiDocument = {
       },
     },
     '/associations/current/props': {
+      post: {
+        summary: 'Opret en rekvisit i den indloggede brugers forening',
+        description: 'Kræver rollen associationAdmin. Lageradressen skal tilhøre foreningen.',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/AssociationPropUpdate' },
+            },
+          },
+        },
+        responses: {
+          '201': {
+            description: 'Rekvisitten er oprettet.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['message', 'prop'],
+                  properties: {
+                    message: { type: 'string' },
+                    prop: { $ref: '#/components/schemas/AssociationProp' },
+                  },
+                },
+              },
+            },
+          },
+          '400': { description: 'Rekvisitoplysningerne eller lageradressen er ugyldige.' },
+          '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
+          '403': { description: 'Brugeren må ikke oprette rekvisitter.' },
+        },
+      },
       get: {
         summary: 'Hent rekvisitter for den indloggede brugers forening',
         security: [{ bearerAuth: [] }],
