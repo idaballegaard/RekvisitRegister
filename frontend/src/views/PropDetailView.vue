@@ -5,13 +5,17 @@ import PropImage from '../components/PropImage.vue'
 import {
   deletePropImage,
   createCurrentAssociationProp,
+  createCurrentPropReservation,
   deleteCurrentAssociationProp,
+  deleteCurrentPropReservation,
   getCurrentAssociation,
   getCurrentAssociationProps,
+  getCurrentPropReservations,
   uploadPropImage,
   updateCurrentAssociationProp,
   type AssociationProfile,
   type AssociationProp,
+  type AssociationReservation,
 } from '../services/association.service'
 import {
   clearAuthSession,
@@ -38,6 +42,13 @@ const imageIndex = ref(0)
 const isUpdatingImage = ref(false)
 const imageErrorMessage = ref('')
 const imageSuccessMessage = ref('')
+const reservations = ref<AssociationReservation[]>([])
+const isLoadingReservations = ref(false)
+const reservationsLoadErrorMessage = ref('')
+const isUpdatingReservation = ref(false)
+const reservationErrorMessage = ref('')
+const reservationStartDate = ref('')
+const reservationEndDate = ref('')
 const isDeleting = ref(false)
 const deleteErrorMessage = ref('')
 const isDeleteConfirmationOpen = ref(false)
@@ -83,6 +94,50 @@ function getStorageLocationLabel(locationId: string): string {
   return location
     ? `${location.address}, ${location.postalCode} ${location.city}`
     : 'Lageradresse ikke fundet'
+}
+
+function formatReservationDate(date: string): string {
+  return new Intl.DateTimeFormat('da-DK', {
+    dateStyle: 'long',
+    timeZone: 'UTC',
+  }).format(new Date(`${date}T00:00:00.000Z`))
+}
+
+function getReservationInputError(availability: boolean): string {
+  const hasStartDate = reservationStartDate.value !== ''
+  const hasEndDate = reservationEndDate.value !== ''
+  if (hasStartDate !== hasEndDate) {
+    return 'Angiv både start- og slutdato for reservationen.'
+  }
+  if (hasStartDate && !availability) {
+    return 'Markér rekvisitten som tilgængelig for at kunne reservere den.'
+  }
+  if (hasStartDate && reservationEndDate.value < reservationStartDate.value) {
+    return 'Slutdatoen skal være samme dag som eller efter startdatoen.'
+  }
+  return ''
+}
+
+async function removeReservation(reservation: AssociationReservation): Promise<void> {
+  if (!prop.value || isUpdatingReservation.value) {
+    return
+  }
+  isUpdatingReservation.value = true
+  reservationErrorMessage.value = ''
+  try {
+    await deleteCurrentPropReservation(prop.value.id, reservation.id)
+    reservations.value = reservations.value.filter(({ id }) => id !== reservation.id)
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      await router.replace({ name: 'login' })
+      return
+    }
+    reservationErrorMessage.value = error instanceof Error
+      ? error.message
+      : 'Reservationen kunne ikke fjernes.'
+  } finally {
+    isUpdatingReservation.value = false
+  }
 }
 
 function selectImages(event: Event): void {
@@ -237,6 +292,9 @@ function startEditing(): void {
   if (!prop.value || !['associationAdmin', 'propManager'].includes(profile.value?.role ?? '')) {
     return
   }
+  reservationStartDate.value = ''
+  reservationEndDate.value = ''
+  reservationErrorMessage.value = ''
   editForm.name = prop.value.name
   editForm.description = prop.value.description
   editForm.storageLocationId = prop.value.storageLocationId
@@ -270,6 +328,11 @@ function cancelEditing(): void {
 async function saveProp(): Promise<void> {
   if (!prop.value || !['associationAdmin', 'propManager'].includes(profile.value?.role ?? '')
     || createdPropId.value) {
+    return
+  }
+  const reservationInputError = getReservationInputError(editForm.availability)
+  if (reservationInputError) {
+    saveErrorMessage.value = reservationInputError
     return
   }
   saveErrorMessage.value = ''
@@ -306,11 +369,41 @@ async function saveProp(): Promise<void> {
           return
         }
       }
+      if (reservationStartDate.value && reservationEndDate.value) {
+        try {
+          await createCurrentPropReservation(createdProp.id, {
+            startDate: reservationStartDate.value,
+            endDate: reservationEndDate.value,
+          })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Ukendt fejl.'
+          saveErrorMessage.value = `Rekvisitten er oprettet, men reservationen kunne ikke oprettes: ${message} Åbn rekvisitten for at prøve igen.`
+          return
+        }
+      }
       await openCreatedProp()
       return
     }
     const updatedProp = await updateCurrentAssociationProp(prop.value.id, input)
     props.value = (props.value ?? []).map((item) => item.id === updatedProp.id ? updatedProp : item)
+    if (reservationStartDate.value && reservationEndDate.value) {
+      try {
+        const reservation = await createCurrentPropReservation(updatedProp.id, {
+          startDate: reservationStartDate.value,
+          endDate: reservationEndDate.value,
+        })
+        reservations.value = [...reservations.value, reservation]
+        reservationStartDate.value = ''
+        reservationEndDate.value = ''
+        isEditing.value = false
+        saveSuccessMessage.value = 'Rekvisitten er opdateret, og reservationen er oprettet.'
+        return
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Ukendt fejl.'
+        saveErrorMessage.value = `Rekvisitten er opdateret, men reservationen kunne ikke oprettes: ${message}`
+        return
+      }
+    }
     isEditing.value = false
     saveSuccessMessage.value = 'Rekvisitten er opdateret.'
   } catch (error) {
@@ -378,6 +471,22 @@ onMounted(async () => {
       ])
       association.value = currentAssociation
       props.value = currentProps
+      if (currentProps.some(({ id }) => id === propId.value)) {
+        isLoadingReservations.value = true
+        try {
+          reservations.value = await getCurrentPropReservations(propId.value)
+        } catch (error) {
+          if (error instanceof UnauthorizedError) {
+            await router.replace({ name: 'login' })
+            return
+          }
+          reservationsLoadErrorMessage.value = error instanceof Error
+            ? error.message
+            : 'Reservationerne kunne ikke hentes.'
+        } finally {
+          isLoadingReservations.value = false
+        }
+      }
     }
   } catch (error) {
     if (error instanceof UnauthorizedError) {
@@ -667,6 +776,42 @@ onMounted(async () => {
               Tilgængelig
             </label>
             </fieldset>
+            <section class="grid gap-3 rounded border border-gray-light p-4">
+              <div>
+                <h3 class="font-semibold">Reserver en periode</h3>
+                <p class="mt-1 text-sm text-gray-medium">
+                  En reservation blokerer hele rekvisitten i den valgte periode. Datoerne er
+                  inklusive, og perioder må ikke overlappe.
+                </p>
+              </div>
+              <div class="grid grid-cols-2 gap-4 max-[540px]:grid-cols-1">
+                <div class="grid gap-2">
+                  <label for="reservation-start-date" class="text-sm text-gray-medium">
+                    Fra dato
+                  </label>
+                  <input
+                    id="reservation-start-date"
+                    v-model="reservationStartDate"
+                    type="date"
+                    :required="!!reservationEndDate"
+                    class="h-11 rounded border border-gray-light px-3 text-base focus-visible:outline-2 focus-visible:outline-brand"
+                  />
+                </div>
+                <div class="grid gap-2">
+                  <label for="reservation-end-date" class="text-sm text-gray-medium">
+                    Til dato
+                  </label>
+                  <input
+                    id="reservation-end-date"
+                    v-model="reservationEndDate"
+                    type="date"
+                    :required="!!reservationStartDate"
+                    :min="reservationStartDate || undefined"
+                    class="h-11 rounded border border-gray-light px-3 text-base focus-visible:outline-2 focus-visible:outline-brand"
+                  />
+                </div>
+              </div>
+            </section>
             <p v-if="saveErrorMessage" class="text-base text-brand" role="alert">
               {{ saveErrorMessage }}
             </p>
@@ -851,6 +996,51 @@ onMounted(async () => {
           </div>
         </div>
       </article>
+      <section
+        v-if="!isCreating && prop"
+        class="mt-8 border-t border-[#e2e0e0] pt-6"
+        aria-labelledby="reservations-heading"
+      >
+        <h2 id="reservations-heading" class="text-xl font-bold text-brand">
+          Reservationer
+        </h2>
+        <p v-if="isLoadingReservations" class="mt-3 text-sm text-gray-medium" role="status">
+          Henter reservationer…
+        </p>
+        <p v-else-if="reservationsLoadErrorMessage" class="mt-3 text-sm text-brand" role="alert">
+          {{ reservationsLoadErrorMessage }}
+        </p>
+        <p v-if="reservationErrorMessage" class="mt-3 text-sm text-brand" role="alert">
+          {{ reservationErrorMessage }}
+        </p>
+        <p v-if="!isLoadingReservations && !reservationsLoadErrorMessage && reservations.length === 0" class="mt-3 text-sm text-gray-medium">
+          Der er ingen reservationer på rekvisitten.
+        </p>
+        <ul
+          v-if="!isLoadingReservations && !reservationsLoadErrorMessage && reservations.length"
+          class="mt-4 grid gap-3"
+          aria-label="Reservationer for rekvisitten"
+        >
+          <li
+            v-for="reservation in reservations"
+            :key="reservation.id"
+            class="flex flex-wrap items-center justify-between gap-3 rounded border border-gray-light p-3"
+          >
+            <p class="text-sm">
+              {{ formatReservationDate(reservation.startDate) }} –
+              {{ formatReservationDate(reservation.endDate) }}
+            </p>
+            <button
+              type="button"
+              class="text-sm text-brand underline underline-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="isUpdatingReservation"
+              @click="removeReservation(reservation)"
+            >
+              {{ isUpdatingReservation ? 'Fjerner…' : 'Fjern reservation' }}
+            </button>
+          </li>
+        </ul>
+      </section>
       <p v-if="saveSuccessMessage" class="mt-5 text-base text-green-800" role="status">
         {{ saveSuccessMessage }}
       </p>

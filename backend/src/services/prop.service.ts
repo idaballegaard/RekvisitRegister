@@ -12,6 +12,7 @@ import {
   updatePropByIdForAssociation,
 } from '../repositories/prop.repository.ts'
 import { deletePropImages } from './prop-image.service.ts'
+import { deleteReservationsForProp } from '../repositories/reservation.repository.ts'
 
 export class AssociationPropsError extends Error {}
 export class AssociationPropNotFoundError extends Error {}
@@ -172,6 +173,7 @@ export async function deleteAssociationProp(
   if (!deletedProp) {
     throw new AssociationPropNotFoundError()
   }
+  await deleteReservationsForProp(new ObjectId(associationId), new ObjectId(propId))
   await deletePropImages(deletedProp.imageIds ?? [])
 }
 

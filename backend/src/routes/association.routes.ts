@@ -13,6 +13,11 @@ import {
 import { requireAuthentication, requirePermission } from '../middleware/auth.middleware.ts'
 import { PERMISSIONS } from '../models/user.model.ts'
 import { deleteImage, getImage, imageErrorHandler, uploadImage } from '../controllers/prop-image.controller.ts'
+import {
+  deleteCurrentPropReservation,
+  getCurrentPropReservations,
+  postCurrentPropReservation,
+} from '../controllers/reservation.controller.ts'
 
 const associationRouter = Router()
 
@@ -62,6 +67,24 @@ associationRouter.delete(
   requireAuthentication,
   requirePermission(PERMISSIONS.MANAGE_PROPS),
   deleteCurrentAssociationProp,
+)
+associationRouter.get(
+  '/associations/current/props/:propId/reservations',
+  requireAuthentication,
+  requirePermission(PERMISSIONS.MANAGE_PROPS),
+  getCurrentPropReservations,
+)
+associationRouter.post(
+  '/associations/current/props/:propId/reservations',
+  requireAuthentication,
+  requirePermission(PERMISSIONS.MANAGE_PROPS),
+  postCurrentPropReservation,
+)
+associationRouter.delete(
+  '/associations/current/props/:propId/reservations/:reservationId',
+  requireAuthentication,
+  requirePermission(PERMISSIONS.MANAGE_PROPS),
+  deleteCurrentPropReservation,
 )
 associationRouter.patch(
   '/associations/current',

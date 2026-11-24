@@ -392,6 +392,16 @@ describe('AdminView', () => {
       }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ prop: createdProp }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        message: 'Reservationen er oprettet.',
+        reservation: {
+          id: '222222222222222222222222',
+          propId: createdProp.id,
+          startDate: '2026-12-10',
+          endDate: '2026-12-12',
+          createdAt: '2026-11-24T10:00:00.000Z',
+        },
+      }), { status: 201 }))
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mount(PropDetailView, { props: { mode: 'create' } })
 
@@ -402,6 +412,8 @@ describe('AdminView', () => {
     await wrapper.get('input[aria-label="Bredde"]').setValue('45')
     await wrapper.get('input[aria-label="Dybde"]').setValue('45')
     await wrapper.get('#prop-storage-location').setValue(createdProp.storageLocationId)
+    await wrapper.get('#reservation-start-date').setValue('2026-12-10')
+    await wrapper.get('#reservation-end-date').setValue('2026-12-12')
     await wrapper.get('form').trigger('submit')
 
     await vi.waitFor(() => expect(routerPush).toHaveBeenCalledWith({
@@ -410,6 +422,13 @@ describe('AdminView', () => {
     }))
     expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/associations/current/props')
     expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ method: 'POST' })
+    expect(fetchMock.mock.calls[3]?.[0]).toBe(
+      `/api/associations/current/props/${createdProp.id}/reservations`,
+    )
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ startDate: '2026-12-10', endDate: '2026-12-12' }),
+    })
   })
 
   it('uploads selected images after creating the prop', async () => {
@@ -615,6 +634,7 @@ describe('AdminView', () => {
       }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
       .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(associationPropsResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ reservations: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         message: 'Rekvisitten er opdateret.',
         prop: { ...associationPropsResponse.props[0], name: 'Manager-updated prop' },
@@ -643,7 +663,7 @@ describe('AdminView', () => {
     await vi.waitFor(() => {
       expect(wrapper.get('#prop-detail-heading').text()).toBe('Manager-updated prop')
     })
-    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({ method: 'PATCH' })
+    expect(fetchMock.mock.calls[4]?.[1]).toMatchObject({ method: 'PATCH' })
 
     const deleteButton = wrapper.findAll('button')
       .find((button) => button.text() === 'Slet rekvisit')
@@ -651,7 +671,7 @@ describe('AdminView', () => {
     await deleteButton?.trigger('click')
     expect(wrapper.get('[role="dialog"]').text())
       .toContain('Er du sikker på, at du vil slette rekvisitten "Manager-updated prop"?')
-    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(fetchMock).toHaveBeenCalledTimes(5)
 
     await wrapper.findAll('[role="dialog"] button')
       .find((button) => button.text() === 'Slet rekvisit')
@@ -662,10 +682,84 @@ describe('AdminView', () => {
         query: { tab: 'props', q: 'stol' },
       })
     })
-    expect(fetchMock.mock.calls[4]?.[0]).toBe(
+    expect(fetchMock.mock.calls[5]?.[0]).toBe(
       '/api/associations/current/props/6b002a5c3c49f74ff7188de8',
     )
-    expect(fetchMock.mock.calls[4]?.[1]).toMatchObject({ method: 'DELETE' })
+    expect(fetchMock.mock.calls[5]?.[1]).toMatchObject({ method: 'DELETE' })
+  })
+
+  it('lets prop managers add and remove reservation periods while editing', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const existingReservation = {
+      id: '111111111111111111111111',
+      propId: associationPropsResponse.props[0]?.id,
+      startDate: '2026-12-01',
+      endDate: '2026-12-02',
+      createdAt: '2026-11-24T10:00:00.000Z',
+    }
+    const newReservation = {
+      id: '222222222222222222222222',
+      propId: associationPropsResponse.props[0]?.id,
+      startDate: '2026-12-10',
+      endDate: '2026-12-12',
+      createdAt: '2026-11-24T10:00:00.000Z',
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        user: { ...currentUserResponse.user, role: 'propManager' },
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationPropsResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        reservations: [existingReservation],
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        message: 'Rekvisitten er opdateret.',
+        prop: associationPropsResponse.props[0],
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        message: 'Reservationen er oprettet.',
+        reservation: newReservation,
+      }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        message: 'Reservationen er fjernet.',
+      }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(PropDetailView)
+
+    await vi.waitFor(() => {
+      expect(wrapper.get('#prop-detail-heading').text()).toBe('Træstol')
+      expect(wrapper.get('[aria-label="Reservationer for rekvisitten"]').text())
+        .toContain('1. december 2026')
+    })
+    await wrapper.findAll('button')
+      .find((button) => button.text() === 'Redigér')
+      ?.trigger('click')
+    await wrapper.get('#reservation-start-date').setValue('2026-12-10')
+    await wrapper.get('#reservation-end-date').setValue('2026-12-12')
+    await wrapper.get('form').trigger('submit')
+
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('Rekvisitten er opdateret, og reservationen er oprettet.')
+      expect(wrapper.get('[aria-label="Reservationer for rekvisitten"]').text())
+        .toContain('10. december 2026')
+    })
+    expect(fetchMock.mock.calls[5]?.[0]).toBe(
+      '/api/associations/current/props/6b002a5c3c49f74ff7188de8/reservations',
+    )
+    expect(fetchMock.mock.calls[5]?.[1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ startDate: '2026-12-10', endDate: '2026-12-12' }),
+    })
+
+    await wrapper.findAll('[aria-label="Reservationer for rekvisitten"] button')[0]?.trigger('click')
+    await vi.waitFor(() => {
+      expect(wrapper.findAll('[aria-label="Reservationer for rekvisitten"] li')).toHaveLength(1)
+    })
+    expect(fetchMock.mock.calls[6]?.[0]).toBe(
+      '/api/associations/current/props/6b002a5c3c49f74ff7188de8/reservations/111111111111111111111111',
+    )
+    expect(fetchMock.mock.calls[6]?.[1]).toMatchObject({ method: 'DELETE' })
   })
 
   it('lets an association admin edit and save a prop', async () => {
@@ -690,6 +784,10 @@ describe('AdminView', () => {
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ))
       .mockResolvedValueOnce(new Response(
+        JSON.stringify({ reservations: [] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
         JSON.stringify({ message: 'Rekvisitten er opdateret.', prop: updatedProp }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ))
@@ -711,10 +809,10 @@ describe('AdminView', () => {
       expect(wrapper.get('#prop-detail-heading').text()).toBe('Træstol restaureret')
       expect(wrapper.text()).toContain('Rekvisitten er opdateret.')
     })
-    expect(fetchMock.mock.calls[3]?.[0]).toBe(
+    expect(fetchMock.mock.calls[4]?.[0]).toBe(
       '/api/associations/current/props/6b002a5c3c49f74ff7188de8',
     )
-    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({
+    expect(fetchMock.mock.calls[4]?.[1]).toMatchObject({
       method: 'PATCH',
       body: JSON.stringify({
         name: 'Træstol restaureret',
@@ -739,6 +837,7 @@ describe('AdminView', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(associationPropsResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ reservations: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ imageId }), { status: 201 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ message: 'Billedet er fjernet.' }), { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
@@ -759,7 +858,7 @@ describe('AdminView', () => {
     })
     await input.trigger('change')
     expect(wrapper.text()).toContain('Vælg et billede i JPEG, PNG eller WebP.')
-    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenCalledTimes(4)
 
     Object.defineProperty(input.element, 'files', {
       configurable: true,
@@ -767,10 +866,10 @@ describe('AdminView', () => {
     })
     await input.trigger('change')
     await vi.waitFor(() => expect(wrapper.text()).toContain('Billedet er tilføjet.'))
-    expect(fetchMock.mock.calls[3]?.[0]).toBe(
+    expect(fetchMock.mock.calls[4]?.[0]).toBe(
       '/api/associations/current/props/6b002a5c3c49f74ff7188de8/images',
     )
-    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({
+    expect(fetchMock.mock.calls[4]?.[1]).toMatchObject({
       method: 'POST',
       headers: { 'Content-Type': 'image/png' },
     })
@@ -782,7 +881,7 @@ describe('AdminView', () => {
     await wrapper.findAll('button').find((button) => button.text() === 'Redigér')?.trigger('click')
     await wrapper.findAll('button').find((button) => button.text() === 'Fjern billede')?.trigger('click')
     await vi.waitFor(() => expect(wrapper.text()).toContain('Billedet er fjernet.'))
-    expect(fetchMock.mock.calls[4]?.[0]).toBe(
+    expect(fetchMock.mock.calls[5]?.[0]).toBe(
       `/api/associations/current/props/6b002a5c3c49f74ff7188de8/images/${imageId}`,
     )
   })
@@ -797,6 +896,7 @@ describe('AdminView', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(propsWithImages), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ reservations: [] }), { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mount(PropDetailView, { global: { stubs: { PropImage: true } } })
     await vi.waitFor(() => expect(wrapper.find('prop-image-stub').exists()).toBe(true))
@@ -820,6 +920,10 @@ describe('AdminView', () => {
       ))
       .mockResolvedValueOnce(new Response(
         JSON.stringify(associationPropsResponse),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({ reservations: [] }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ))
     vi.stubGlobal('fetch', fetchMock)
@@ -891,6 +995,7 @@ describe('AdminView', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(associationPropsResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ reservations: [] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(
         JSON.stringify({ message: 'Rekvisitten er slettet.' }),
         { status: 200 },
@@ -909,11 +1014,11 @@ describe('AdminView', () => {
     expect(dialog.attributes('aria-modal')).toBe('true')
     expect(dialog.text()).toContain('Er du sikker på, at du vil slette rekvisitten "Træstol"?')
     expect(dialog.text()).toContain('Det kan ikke fortrydes.')
-    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenCalledTimes(4)
 
     await dialog.get('button').trigger('click')
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
-    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenCalledTimes(4)
 
     await openButton?.trigger('click')
     await wrapper.findAll('[role="dialog"] button')
@@ -925,7 +1030,7 @@ describe('AdminView', () => {
         query: { tab: 'props', q: 'stol' },
       })
     })
-    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({ method: 'DELETE' })
+    expect(fetchMock.mock.calls[4]?.[1]).toMatchObject({ method: 'DELETE' })
   })
 
   it('lets an association admin add a warehouse address', async () => {

@@ -11,6 +11,7 @@ import type { Server } from 'node:http'
 import test, { after, before, describe } from 'node:test'
 import { closeDatabase, connectToDatabase, getDatabase } from '../config/database.ts'
 import type { PropDocument } from '../models/prop.model.ts'
+import type { ReservationDocument } from '../models/reservation.model.ts'
 import type { StorageLocationDocument } from '../models/storage-location.model.ts'
 import { ROLES, type UserDocument } from '../models/user.model.ts'
 import type { AssociationDocument } from '../models/association.model.ts'
@@ -626,6 +627,181 @@ describe('auth endpoints with MongoDB', () => {
       await getDatabase().collection<PropDocument>('prop').findOne({ _id: adminPropId }),
       null,
     )
+  })
+
+  test('allows managers to block non-overlapping reservation periods for owned props', async () => {
+    const manager = await getDatabase().collection<UserDocument>('users')
+      .findOne({ userName: 'integration.manager' })
+    assert.ok(manager)
+    const managerToken = await createAccessToken({
+      userId: manager._id.toHexString(),
+      firstName: manager.firstName,
+      lastName: manager.lastName,
+      userName: manager.userName,
+      role: manager.role,
+      associationId: manager.associationId.toHexString(),
+    })
+    const managerHeaders = {
+      Authorization: 'Bearer ' + managerToken,
+      'Content-Type': 'application/json',
+    }
+    const searchUser = await getDatabase().collection<UserDocument>('users')
+      .findOne({ userName: 'integration.search' })
+    assert.ok(searchUser)
+    const searchToken = await createAccessToken({
+      userId: searchUser._id.toHexString(),
+      firstName: searchUser.firstName,
+      lastName: searchUser.lastName,
+      userName: searchUser.userName,
+      role: searchUser.role,
+      associationId: searchUser.associationId.toHexString(),
+    })
+    const propId = new ObjectId()
+    await getDatabase().collection<PropDocument>('prop').insertOne({
+      _id: propId,
+      name: 'Reservable prop',
+      description: '',
+      associationId: expectedAssociationId,
+      storageLocationId: storageLocationIds[0],
+      availability: true,
+      dimensions: { height: 1, width: 1, depth: 1, unit: 'cm' },
+      quantity: 1,
+      colour: '',
+      placement: '',
+      tags: [],
+      condition: '',
+      historicalPeriod: '',
+    })
+    const url = `${baseUrl}/associations/current/props/${propId.toHexString()}/reservations`
+    const reserve = (startDate: string, endDate: string) => fetch(url, {
+      method: 'POST',
+      headers: managerHeaders,
+      body: JSON.stringify({ startDate, endDate }),
+    })
+
+    assert.equal((await reserve('2026-02-31', '2026-03-01')).status, 400)
+    assert.equal((await reserve('2026-12-04', '2026-12-03')).status, 400)
+    assert.equal((await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + searchToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ startDate: '2026-12-01', endDate: '2026-12-03' }),
+    })).status, 403)
+
+    const firstReservationResponse = await reserve('2026-12-01', '2026-12-03')
+    assert.equal(firstReservationResponse.status, 201)
+    const firstReservationBody = await firstReservationResponse.json() as {
+      reservation: {
+        id: string
+        propId: string
+        startDate: string
+        endDate: string
+        createdAt: string
+      }
+    }
+    assert.deepEqual(firstReservationBody.reservation, {
+      id: firstReservationBody.reservation.id,
+      propId: propId.toHexString(),
+      startDate: '2026-12-01',
+      endDate: '2026-12-03',
+      createdAt: firstReservationBody.reservation.createdAt,
+    })
+
+    assert.equal((await reserve('2026-12-03', '2026-12-04')).status, 409)
+    assert.equal((await reserve('2026-12-04', '2026-12-05')).status, 201)
+
+    const unavailablePropId = new ObjectId()
+    await getDatabase().collection<PropDocument>('prop').insertOne({
+      _id: unavailablePropId,
+      name: 'Unavailable prop',
+      description: '',
+      associationId: expectedAssociationId,
+      storageLocationId: storageLocationIds[0],
+      availability: false,
+      dimensions: { height: 1, width: 1, depth: 1, unit: 'cm' },
+      quantity: 1,
+      colour: '',
+      placement: '',
+      tags: [],
+      condition: '',
+      historicalPeriod: '',
+    })
+    const unavailableResponse = await fetch(
+      `${baseUrl}/associations/current/props/${unavailablePropId.toHexString()}/reservations`,
+      {
+        method: 'POST',
+        headers: managerHeaders,
+        body: JSON.stringify({ startDate: '2026-12-01', endDate: '2026-12-03' }),
+      },
+    )
+    assert.equal(unavailableResponse.status, 409)
+
+    const foreignPropId = new ObjectId()
+    await getDatabase().collection<PropDocument>('prop').insertOne({
+      _id: foreignPropId,
+      name: 'Foreign prop',
+      description: '',
+      associationId: new ObjectId(),
+      storageLocationId: storageLocationIds[0],
+      availability: true,
+      dimensions: { height: 1, width: 1, depth: 1, unit: 'cm' },
+      quantity: 1,
+      colour: '',
+      placement: '',
+      tags: [],
+      condition: '',
+      historicalPeriod: '',
+    })
+    assert.equal((await fetch(
+      `${baseUrl}/associations/current/props/${foreignPropId.toHexString()}/reservations`,
+      { headers: { Authorization: 'Bearer ' + managerToken } },
+    )).status, 404)
+    const foreignReservation = await fetch(
+      `${baseUrl}/associations/current/props/${foreignPropId.toHexString()}/reservations`,
+      {
+        method: 'POST',
+        headers: managerHeaders,
+        body: JSON.stringify({ startDate: '2026-12-01', endDate: '2026-12-03' }),
+      },
+    )
+    assert.equal(foreignReservation.status, 404)
+
+    const listResponse = await fetch(url, {
+      headers: { Authorization: 'Bearer ' + managerToken },
+    })
+    assert.equal(listResponse.status, 200)
+    const reservationList = await listResponse.json() as {
+      reservations: Array<{ id: string; startDate: string; endDate: string }>
+    }
+    assert.deepEqual(reservationList.reservations.map(({ startDate, endDate }) => ({
+      startDate,
+      endDate,
+    })), [
+      { startDate: '2026-12-01', endDate: '2026-12-03' },
+      { startDate: '2026-12-04', endDate: '2026-12-05' },
+    ])
+
+    const removeResponse = await fetch(`${url}/${firstReservationBody.reservation.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + managerToken },
+    })
+    assert.equal(removeResponse.status, 200)
+    assert.equal((await reserve('2026-12-01', '2026-12-03')).status, 201)
+
+    const propToDelete = await getDatabase().collection<PropDocument>('prop')
+      .findOne({ _id: propId })
+    assert.ok(propToDelete)
+    const reservationCollection = getDatabase().collection<ReservationDocument>('reservation')
+    const existingReservation = await reservationCollection.findOne({ propId })
+    assert.ok(existingReservation)
+    const propDelete = await fetch(
+      `${baseUrl}/associations/current/props/${propId.toHexString()}`,
+      { method: 'DELETE', headers: { Authorization: 'Bearer ' + managerToken } },
+    )
+    assert.equal(propDelete.status, 200)
+    assert.equal(await reservationCollection.countDocuments({ propId }), 0)
   })
 
   test('returns a generic response for an unknown reset email', async () => {

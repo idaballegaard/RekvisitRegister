@@ -40,6 +40,14 @@ export interface AssociationProp {
   imageIds?: string[]
 }
 
+export interface AssociationReservation {
+  id: string
+  propId: string
+  startDate: string
+  endDate: string
+  createdAt: string
+}
+
 export type UpdateAssociationPropInput = Omit<AssociationProp, 'id' | 'imageIds'>
 
 export interface UpdateAssociationInput {
@@ -120,6 +128,20 @@ function isAssociationProp(value: unknown): value is AssociationProp {
       Array.isArray(prop.imageIds)
       && prop.imageIds.every((id) => typeof id === 'string' && /^[a-f\d]{24}$/.test(id))
     ))
+}
+
+function isAssociationReservation(value: unknown): value is AssociationReservation {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+  const reservation = value as Partial<AssociationReservation>
+  return typeof reservation.id === 'string'
+    && typeof reservation.propId === 'string'
+    && typeof reservation.startDate === 'string'
+    && /^\d{4}-\d{2}-\d{2}$/.test(reservation.startDate)
+    && typeof reservation.endDate === 'string'
+    && /^\d{4}-\d{2}-\d{2}$/.test(reservation.endDate)
+    && typeof reservation.createdAt === 'string'
 }
 
 async function imageRequest(
@@ -338,6 +360,83 @@ export async function getCurrentAssociationProps(): Promise<AssociationProp[]> {
   }
 
   return body.props
+}
+
+export async function getCurrentPropReservations(propId: string): Promise<AssociationReservation[]> {
+  const body = await requestPropReservations(propId, 'GET')
+  if (typeof body !== 'object' || body === null || !('reservations' in body)
+    || !Array.isArray(body.reservations) || !body.reservations.every(isAssociationReservation)) {
+    throw new Error('Serveren returnerede ugyldige reservationsoplysninger.')
+  }
+  return body.reservations
+}
+
+export async function createCurrentPropReservation(
+  propId: string,
+  dates: { startDate: string; endDate: string },
+): Promise<AssociationReservation> {
+  const body = await requestPropReservations(propId, 'POST', dates)
+  if (typeof body !== 'object' || body === null || !('reservation' in body)
+    || !isAssociationReservation(body.reservation)) {
+    throw new Error('Serveren returnerede ugyldige reservationsoplysninger.')
+  }
+  return body.reservation
+}
+
+export async function deleteCurrentPropReservation(
+  propId: string,
+  reservationId: string,
+): Promise<void> {
+  const body = await requestPropReservations(propId, 'DELETE', undefined, reservationId)
+  if (typeof body !== 'object' || body === null || !('message' in body)
+    || body.message !== 'Reservationen er fjernet.') {
+    throw new Error('Serveren returnerede et ugyldigt svar.')
+  }
+}
+
+async function requestPropReservations(
+  propId: string,
+  method: 'GET' | 'POST' | 'DELETE',
+  dates?: { startDate: string; endDate: string },
+  reservationId?: string,
+): Promise<unknown> {
+  const accessToken = sessionStorage.getItem('rekvisit-register.access-token')
+  if (!accessToken) {
+    throw new UnauthorizedError('Du er ikke logget ind.')
+  }
+  const path = `/api/associations/current/props/${encodeURIComponent(propId)}/reservations`
+  const endpoint = reservationId ? `${path}/${encodeURIComponent(reservationId)}` : path
+  let response: Response
+  try {
+    response = await fetch(endpoint, {
+      method,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        ...(dates ? { 'Content-Type': 'application/json' } : {}),
+      },
+      ...(dates ? { body: JSON.stringify(dates) } : {}),
+    })
+  } catch {
+    throw new Error('Kunne ikke kontakte serveren. Kontrollér, at backend kører.')
+  }
+  let body: unknown
+  try {
+    body = await response.json()
+  } catch {
+    throw new Error('Serveren returnerede et ugyldigt svar.')
+  }
+  if (response.status === 401) {
+    clearAuthSession()
+    throw new UnauthorizedError('Dit login er udløbet. Log ind igen.')
+  }
+  if (!response.ok) {
+    if (typeof body === 'object' && body !== null && 'error' in body
+      && typeof body.error === 'string') {
+      throw new Error(body.error)
+    }
+    throw new Error(`Reservationen kunne ikke behandles (HTTP ${response.status}).`)
+  }
+  return body
 }
 
 export async function updateCurrentAssociationProp(
