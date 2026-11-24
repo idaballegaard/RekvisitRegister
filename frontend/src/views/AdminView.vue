@@ -752,7 +752,7 @@ onMounted(async () => {
             </p>
           </div>
           <button
-            v-if="profile.role === 'associationAdmin'"
+            v-if="profile.role === 'associationAdmin' || profile.role === 'propManager'"
             type="button"
             class="h-11 rounded-[4px] bg-brand px-5 text-base font-semibold text-white hover:bg-[#7d0202] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             @click="createProp"

@@ -193,7 +193,7 @@ export const openApiDocument = {
     '/associations/current/props': {
       post: {
         summary: 'Opret en rekvisit i den indloggede brugers forening',
-        description: 'Kræver rollen associationAdmin. Lageradressen skal tilhøre foreningen.',
+        description: 'Kræver tilladelsen manageProps (foreningsansvarlig eller rekvisitansvarlig). Lageradressen skal tilhøre foreningen.',
         security: [{ bearerAuth: [] }],
         requestBody: {
           required: true,
@@ -254,7 +254,7 @@ export const openApiDocument = {
     '/associations/current/props/{propId}/images': {
       post: {
         summary: 'Tilføj et billede til en af foreningens rekvisitter',
-        description: 'Kun foreningsansvarlige. JPEG, PNG eller WebP; højst 5 MiB og 10 billeder pr. rekvisit. Billedet genkodes til WebP.',
+        description: 'Foreningsansvarlige og rekvisitansvarlige kan tilføje billeder. JPEG, PNG eller WebP; højst 5 MiB og 10 billeder pr. rekvisit. Billedet genkodes til WebP.',
         security: [{ bearerAuth: [] }],
         parameters: [
           { name: 'propId', in: 'path', required: true, schema: { type: 'string' } },
@@ -308,7 +308,7 @@ export const openApiDocument = {
       },
       delete: {
         summary: 'Fjern et billede fra en af foreningens rekvisitter',
-        description: 'Kun foreningsansvarlige.',
+        description: 'Foreningsansvarlige og rekvisitansvarlige kan fjerne billeder.',
         security: [{ bearerAuth: [] }],
         responses: {
           '200': { description: 'Billedet er fjernet.' },
@@ -321,7 +321,7 @@ export const openApiDocument = {
     '/associations/current/props/{propId}': {
       patch: {
         summary: 'Opdatér en rekvisit i den indloggede brugers forening',
-        description: 'Kræver rollen associationAdmin. Rekvisitten og lageradressen skal tilhøre foreningen.',
+        description: 'Kræver tilladelsen manageProps (foreningsansvarlig eller rekvisitansvarlig). Rekvisitten og lageradressen skal tilhøre foreningen.',
         security: [{ bearerAuth: [] }],
         parameters: [
           {

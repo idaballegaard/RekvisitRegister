@@ -26,13 +26,13 @@ associationRouter.get(
 associationRouter.post(
   '/associations/current/props',
   requireAuthentication,
-  requirePermission(PERMISSIONS.UPDATE_ASSOCIATION),
+  requirePermission(PERMISSIONS.MANAGE_PROPS),
   postCurrentAssociationProp,
 )
 associationRouter.post(
   '/associations/current/props/:propId/images',
   requireAuthentication,
-  requirePermission(PERMISSIONS.UPDATE_ASSOCIATION),
+  requirePermission(PERMISSIONS.MANAGE_PROPS),
   raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: 5 * 1024 * 1024 }),
   uploadImage,
   imageErrorHandler,
@@ -47,14 +47,14 @@ associationRouter.get(
 associationRouter.delete(
   '/associations/current/props/:propId/images/:imageId',
   requireAuthentication,
-  requirePermission(PERMISSIONS.UPDATE_ASSOCIATION),
+  requirePermission(PERMISSIONS.MANAGE_PROPS),
   deleteImage,
   imageErrorHandler,
 )
 associationRouter.patch(
   '/associations/current/props/:propId',
   requireAuthentication,
-  requirePermission(PERMISSIONS.UPDATE_ASSOCIATION),
+  requirePermission(PERMISSIONS.MANAGE_PROPS),
   patchCurrentAssociationProp,
 )
 associationRouter.delete(

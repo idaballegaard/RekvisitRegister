@@ -234,7 +234,7 @@ async function deleteProp(): Promise<void> {
 }
 
 function startEditing(): void {
-  if (!prop.value || profile.value?.role !== 'associationAdmin') {
+  if (!prop.value || !['associationAdmin', 'propManager'].includes(profile.value?.role ?? '')) {
     return
   }
   editForm.name = prop.value.name
@@ -268,7 +268,8 @@ function cancelEditing(): void {
 }
 
 async function saveProp(): Promise<void> {
-  if (!prop.value || profile.value?.role !== 'associationAdmin' || createdPropId.value) {
+  if (!prop.value || !['associationAdmin', 'propManager'].includes(profile.value?.role ?? '')
+    || createdPropId.value) {
     return
   }
   saveErrorMessage.value = ''
@@ -362,7 +363,7 @@ onMounted(async () => {
   try {
     const currentUser = await getCurrentUser()
     if (isCreating
-      ? currentUser.role !== 'associationAdmin'
+      ? !['associationAdmin', 'propManager'].includes(currentUser.role)
       : !['associationAdmin', 'propManager'].includes(currentUser.role)) {
       await router.replace({ name: 'profile' })
       return
@@ -492,7 +493,7 @@ onMounted(async () => {
                 {{ prop.availability ? 'Tilgængelig' : 'Ikke tilgængelig' }}
               </span>
               <button
-                v-if="profile?.role === 'associationAdmin'"
+                v-if="profile?.role === 'associationAdmin' || profile?.role === 'propManager'"
                 class="h-10 rounded-[4px] border-0 bg-brand px-4 text-base font-semibold text-white hover:bg-[#7d0202] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
                 type="button"
                 @click="startEditing"
@@ -810,7 +811,10 @@ onMounted(async () => {
             <span>{{ imageIndex + 1 }} / {{ prop.imageIds?.length }}</span>
             <button type="button" class="text-brand underline disabled:opacity-50" :disabled="imageIndex >= (prop.imageIds?.length ?? 0) - 1" @click="imageIndex++">Næste</button>
           </div>
-          <div v-if="isEditing && profile?.role === 'associationAdmin'" class="mt-4 grid gap-3">
+          <div
+            v-if="isEditing && (profile?.role === 'associationAdmin' || profile?.role === 'propManager')"
+            class="mt-4 grid gap-3"
+          >
             <input
               id="prop-image-upload"
               type="file"

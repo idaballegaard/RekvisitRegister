@@ -382,6 +382,36 @@ describe('AdminView', () => {
     })
   })
 
+  it('allows prop managers to create a prop', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const createdProp = associationPropsResponse.props[0]
+    if (!createdProp) throw new Error('Testrekvisit mangler.')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        user: { ...currentUserResponse.user, role: 'propManager' },
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ prop: createdProp }), { status: 201 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(PropDetailView, { props: { mode: 'create' } })
+
+    await vi.waitFor(() => expect(wrapper.find('#prop-name').exists()).toBe(true))
+    await wrapper.get('#prop-name').setValue('Træstol')
+    await wrapper.get('#prop-description').setValue(createdProp.description)
+    await wrapper.get('input[aria-label="Højde"]').setValue('90')
+    await wrapper.get('input[aria-label="Bredde"]').setValue('45')
+    await wrapper.get('input[aria-label="Dybde"]').setValue('45')
+    await wrapper.get('#prop-storage-location').setValue(createdProp.storageLocationId)
+    await wrapper.get('form').trigger('submit')
+
+    await vi.waitFor(() => expect(routerPush).toHaveBeenCalledWith({
+      name: 'admin-prop-detail',
+      params: { propId: createdProp.id },
+    }))
+    expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/associations/current/props')
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ method: 'POST' })
+  })
+
   it('uploads selected images after creating the prop', async () => {
     sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
     const createdProp = associationPropsResponse.props[0]
@@ -577,7 +607,7 @@ describe('AdminView', () => {
     })
   })
 
-  it('lets prop managers delete props after confirmation but not edit them', async () => {
+  it('lets prop managers edit and delete props but not manage association details', async () => {
     sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
@@ -585,6 +615,10 @@ describe('AdminView', () => {
       }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
       .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(associationPropsResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        message: 'Rekvisitten er opdateret.',
+        prop: { ...associationPropsResponse.props[0], name: 'Manager-updated prop' },
+      }), { status: 200 }))
       .mockResolvedValueOnce(new Response(
         JSON.stringify({ message: 'Rekvisitten er slettet.' }),
         { status: 200 },
@@ -595,16 +629,29 @@ describe('AdminView', () => {
     await vi.waitFor(() => {
       expect(wrapper.get('#prop-detail-heading').text()).toBe('Træstol')
     })
-    expect(wrapper.findAll('button').some((button) => button.text() === 'Redigér')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Redigér')).toBe(true)
     expect(wrapper.get('nav[aria-label="Adminpanel-faner"]').text()).toContain('Egne rekvisitter')
+    expect(wrapper.get('nav[aria-label="Adminpanel-faner"]').text()).not.toContain('Generelt')
+
+    await wrapper.findAll('button')
+      .find((button) => button.text() === 'Redigér')
+      ?.trigger('click')
+    expect(wrapper.get('form').text()).toContain('Redigér rekvisit')
+    expect(wrapper.find('#prop-image-upload').exists()).toBe(true)
+    await wrapper.get('#prop-name').setValue('Manager-updated prop')
+    await wrapper.get('form').trigger('submit')
+    await vi.waitFor(() => {
+      expect(wrapper.get('#prop-detail-heading').text()).toBe('Manager-updated prop')
+    })
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({ method: 'PATCH' })
 
     const deleteButton = wrapper.findAll('button')
       .find((button) => button.text() === 'Slet rekvisit')
     expect(deleteButton).toBeDefined()
     await deleteButton?.trigger('click')
     expect(wrapper.get('[role="dialog"]').text())
-      .toContain('Er du sikker på, at du vil slette rekvisitten "Træstol"?')
-    expect(fetchMock).toHaveBeenCalledTimes(3)
+      .toContain('Er du sikker på, at du vil slette rekvisitten "Manager-updated prop"?')
+    expect(fetchMock).toHaveBeenCalledTimes(4)
 
     await wrapper.findAll('[role="dialog"] button')
       .find((button) => button.text() === 'Slet rekvisit')
@@ -615,10 +662,10 @@ describe('AdminView', () => {
         query: { tab: 'props', q: 'stol' },
       })
     })
-    expect(fetchMock.mock.calls[3]?.[0]).toBe(
+    expect(fetchMock.mock.calls[4]?.[0]).toBe(
       '/api/associations/current/props/6b002a5c3c49f74ff7188de8',
     )
-    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({ method: 'DELETE' })
+    expect(fetchMock.mock.calls[4]?.[1]).toMatchObject({ method: 'DELETE' })
   })
 
   it('lets an association admin edit and save a prop', async () => {
@@ -1118,7 +1165,7 @@ describe('AdminView', () => {
     expect(wrapper.text()).toContain('Updated Contact')
   })
 
-  it('lets prop managers access only the props overview', async () => {
+  it('lets prop managers access and create from only the props overview', async () => {
     sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
@@ -1134,8 +1181,12 @@ describe('AdminView', () => {
     })
     expect(wrapper.get('h1').text()).toBe('Rekvisitoversigt')
     expect(wrapper.find('#contacts-heading').exists()).toBe(false)
-    expect(wrapper.find('button').text()).not.toContain('Tilføj rekvisit')
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Tilføj rekvisit')).toBe(true)
     expect(wrapper.text()).toContain('Træstol')
+    await wrapper.findAll('button')
+      .find((button) => button.text() === 'Tilføj rekvisit')
+      ?.trigger('click')
+    expect(routerPush).toHaveBeenCalledWith({ name: 'admin-prop-create' })
   })
 
   it('redirects search users away from the props overview', async () => {

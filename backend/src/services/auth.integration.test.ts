@@ -888,24 +888,55 @@ describe('auth endpoints with MongoDB', () => {
       assert.equal(managerLoginResponse.status, 200)
       const managerLoginBody = await managerLoginResponse.json() as { accessToken: string }
       associationManagerAccessToken = managerLoginBody.accessToken
-      const forbiddenPropCreate = await fetch(`${baseUrl}/associations/current/props`, {
+      const managerPropInput = {
+        name: 'Manager-created prop',
+        description: 'Created by the prop manager.',
+        storageLocationId: storageLocationIds[0].toHexString(),
+        availability: true,
+        dimensions: { height: 10, width: 20, depth: 30, unit: 'cm' },
+        quantity: 1,
+        colour: 'Blå',
+        placement: 'Reol 1',
+        tags: ['manager'],
+        condition: 'God',
+        historicalPeriod: '',
+      }
+      const managerPropCreate = await fetch(`${baseUrl}/associations/current/props`, {
         method: 'POST',
         headers: {
           Authorization: 'Bearer ' + associationManagerAccessToken,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify(managerPropInput),
       })
-      assert.equal(forbiddenPropCreate.status, 403)
-      const forbiddenImageUpload = await fetch(
-        `${baseUrl}/associations/current/props/6b002a5c3c49f74ff7188de8/images`,
+      assert.equal(managerPropCreate.status, 201)
+      const managerPropBody = await managerPropCreate.json() as { prop: { id: string } }
+      const managerPropUrl = `${baseUrl}/associations/current/props/${managerPropBody.prop.id}`
+      const managerImage = await sharp({
+        create: { width: 2, height: 2, channels: 3, background: '#ff0000' },
+      }).png().toBuffer()
+      const managerImageUpload = await fetch(
+        `${managerPropUrl}/images`,
         {
           method: 'POST',
-          headers: { Authorization: 'Bearer ' + associationManagerAccessToken, 'Content-Type': 'image/png' },
-          body: new Uint8Array([1]),
+          headers: {
+            Authorization: 'Bearer ' + associationManagerAccessToken,
+            'Content-Type': 'image/png',
+          },
+          body: new Uint8Array(managerImage),
         },
       )
-      assert.equal(forbiddenImageUpload.status, 403)
+      assert.equal(managerImageUpload.status, 201)
+      const managerImageBody = await managerImageUpload.json() as { imageId: string }
+
+      const managerImageDelete = await fetch(
+        `${managerPropUrl}/images/${managerImageBody.imageId}`,
+        {
+          method: 'DELETE',
+          headers: { Authorization: 'Bearer ' + associationManagerAccessToken },
+        },
+      )
+      assert.equal(managerImageDelete.status, 200)
 
       const forbiddenUpdateResponse = await fetch(`${baseUrl}/associations/current`, {
         method: 'PATCH',
@@ -917,30 +948,20 @@ describe('auth endpoints with MongoDB', () => {
       })
       assert.equal(forbiddenUpdateResponse.status, 403)
 
-      const forbiddenPropEditResponse = await fetch(
-        `${baseUrl}/associations/current/props/6b002a5c3c49f74ff7188de8`,
+      const managerPropEditResponse = await fetch(
+        managerPropUrl,
         {
           method: 'PATCH',
           headers: {
             Authorization: 'Bearer ' + associationManagerAccessToken,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            name: 'No permission',
-            description: '',
-            storageLocationId: storageLocationIds[0].toHexString(),
-            availability: true,
-            dimensions: { height: 1, width: 1, depth: 1, unit: 'cm' },
-            quantity: 1,
-            colour: '',
-            placement: '',
-            tags: [],
-            condition: '',
-            historicalPeriod: '',
-          }),
+          body: JSON.stringify({ ...managerPropInput, name: 'Manager-updated prop' }),
         },
       )
-      assert.equal(forbiddenPropEditResponse.status, 403)
+      assert.equal(managerPropEditResponse.status, 200)
+      const managerPropEditBody = await managerPropEditResponse.json() as { prop: { name: string } }
+      assert.equal(managerPropEditBody.prop.name, 'Manager-updated prop')
 
       const forbiddenLocationResponse = await fetch(
         `${baseUrl}/associations/current/storage-locations`,
