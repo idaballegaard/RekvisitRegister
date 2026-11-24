@@ -183,6 +183,46 @@ export async function deletePropImage(propId: string, imageId: string): Promise<
   await imageRequest(propId, 'DELETE', imageId)
 }
 
+export async function deleteCurrentAssociationProp(propId: string): Promise<void> {
+  const accessToken = sessionStorage.getItem('rekvisit-register.access-token')
+  if (!accessToken) {
+    throw new UnauthorizedError('Du er ikke logget ind.')
+  }
+
+  let response: Response
+  try {
+    response = await fetch(`/api/associations/current/props/${encodeURIComponent(propId)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+  } catch {
+    throw new Error('Kunne ikke kontakte serveren. Kontrollér, at backend kører.')
+  }
+
+  let body: unknown
+  try {
+    body = await response.json()
+  } catch {
+    throw new Error('Serveren returnerede et ugyldigt svar.')
+  }
+
+  if (response.status === 401) {
+    clearAuthSession()
+    throw new UnauthorizedError('Dit login er udløbet. Log ind igen.')
+  }
+  if (!response.ok) {
+    if (typeof body === 'object' && body !== null && 'error' in body
+      && typeof body.error === 'string') {
+      throw new Error(body.error)
+    }
+    throw new Error(`Rekvisitten kunne ikke slettes (HTTP ${response.status}).`)
+  }
+  if (typeof body !== 'object' || body === null || !('message' in body)
+    || body.message !== 'Rekvisitten er slettet.') {
+    throw new Error('Serveren returnerede et ugyldigt svar.')
+  }
+}
+
 async function requestAssociation(
   method: 'GET' | 'PATCH' | 'POST' | 'DELETE',
   input?: UpdateAssociationInput | CreateStorageLocationInput,

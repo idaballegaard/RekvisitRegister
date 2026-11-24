@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import express from 'express'
@@ -16,6 +16,7 @@ import { ROLES, type UserDocument } from '../models/user.model.ts'
 import type { AssociationDocument } from '../models/association.model.ts'
 import associationRouter from '../routes/association.routes.ts'
 import authRouter from '../routes/auth.routes.ts'
+import { createAccessToken } from './access-token.service.ts'
 import { requestEmailVerification, requestPasswordReset } from './auth.service.ts'
 import { hashPassword } from './user.service.ts'
 
@@ -150,6 +151,18 @@ describe('auth endpoints with MongoDB', () => {
       email: 'manager@example.dk',
       passwordHash: user.passwordHash,
       role: ROLES.PROP_MANAGER,
+      associationId: expectedAssociationId,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    })
+    await getDatabase().collection<UserDocument>('users').insertOne({
+      firstName: 'Integration',
+      lastName: 'Searcher',
+      userName: 'integration.search',
+      email: 'search@example.dk',
+      emailVerifiedAt: new Date(),
+      passwordHash: user.passwordHash,
+      role: ROLES.SEARCH_USER,
       associationId: expectedAssociationId,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
@@ -480,6 +493,139 @@ describe('auth endpoints with MongoDB', () => {
       },
     )
     assert.equal(invalidInputResponse.status, 400)
+  })
+
+  test('deletes only owned props for managers and admins and cleans up prop images', async () => {
+    const manager = await getDatabase().collection<UserDocument>('users')
+      .findOne({ userName: 'integration.manager' })
+    const searchUser = await getDatabase().collection<UserDocument>('users')
+      .findOne({ userName: 'integration.search' })
+    assert.ok(manager)
+    assert.ok(searchUser)
+    associationManagerAccessToken = await createAccessToken({
+      userId: manager._id.toHexString(),
+      firstName: manager.firstName,
+      lastName: manager.lastName,
+      userName: manager.userName,
+      role: manager.role,
+      associationId: manager.associationId.toHexString(),
+    })
+    const searchUserToken = await createAccessToken({
+      userId: searchUser._id.toHexString(),
+      firstName: searchUser.firstName,
+      lastName: searchUser.lastName,
+      userName: searchUser.userName,
+      role: searchUser.role,
+      associationId: searchUser.associationId.toHexString(),
+    })
+
+    const ownedPropId = new ObjectId()
+    await getDatabase().collection<PropDocument>('prop').insertOne({
+      _id: ownedPropId,
+      name: 'Prop to delete',
+      description: '',
+      associationId: expectedAssociationId,
+      storageLocationId: storageLocationIds[0],
+      availability: true,
+      dimensions: { height: 1, width: 1, depth: 1, unit: 'cm' },
+      quantity: 1,
+      colour: '',
+      placement: '',
+      tags: [],
+      condition: '',
+      historicalPeriod: '',
+    })
+    const image = await sharp({
+      create: { width: 2, height: 2, channels: 3, background: '#ff0000' },
+    }).png().toBuffer()
+    const uploadResponse = await fetch(
+      `${baseUrl}/associations/current/props/${ownedPropId.toHexString()}/images`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + authenticatedAccessToken,
+          'Content-Type': 'image/png',
+        },
+        body: new Uint8Array(image),
+      },
+    )
+    assert.equal(uploadResponse.status, 201)
+    const { imageId } = await uploadResponse.json() as { imageId: string }
+
+    const ownedPropUrl = `${baseUrl}/associations/current/props/${ownedPropId.toHexString()}`
+    const managerHeaders = { Authorization: 'Bearer ' + associationManagerAccessToken }
+    const managerDelete = await fetch(ownedPropUrl, {
+      method: 'DELETE',
+      headers: managerHeaders,
+    })
+    assert.equal(managerDelete.status, 200)
+    assert.deepEqual(await managerDelete.json(), { message: 'Rekvisitten er slettet.' })
+    assert.equal(
+      await getDatabase().collection<PropDocument>('prop').findOne({ _id: ownedPropId }),
+      null,
+    )
+    await assert.rejects(readFile(join(imageDirectory!, `${imageId}.webp`)), { code: 'ENOENT' })
+
+    const unknownDelete = await fetch(
+      `${baseUrl}/associations/current/props/${new ObjectId().toHexString()}`,
+      { method: 'DELETE', headers: managerHeaders },
+    )
+    assert.equal(unknownDelete.status, 404)
+
+    const foreignPropId = new ObjectId()
+    await getDatabase().collection<PropDocument>('prop').insertOne({
+      _id: foreignPropId,
+      name: 'Foreign prop',
+      description: '',
+      associationId: new ObjectId(),
+      storageLocationId: storageLocationIds[0],
+      availability: true,
+      dimensions: { height: 1, width: 1, depth: 1, unit: 'cm' },
+      quantity: 1,
+      colour: '',
+      placement: '',
+      tags: [],
+      condition: '',
+      historicalPeriod: '',
+    })
+    const foreignDelete = await fetch(
+      `${baseUrl}/associations/current/props/${foreignPropId.toHexString()}`,
+      { method: 'DELETE', headers: managerHeaders },
+    )
+    assert.equal(foreignDelete.status, 404)
+    assert.ok(await getDatabase().collection<PropDocument>('prop').findOne({ _id: foreignPropId }))
+
+    const searchDelete = await fetch(ownedPropUrl, {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + searchUserToken },
+    })
+    assert.equal(searchDelete.status, 403)
+
+    const adminPropId = new ObjectId()
+    await getDatabase().collection<PropDocument>('prop').insertOne({
+      _id: adminPropId,
+      name: 'Admin prop',
+      description: '',
+      associationId: expectedAssociationId,
+      storageLocationId: storageLocationIds[0],
+      availability: true,
+      dimensions: { height: 1, width: 1, depth: 1, unit: 'cm' },
+      quantity: 1,
+      colour: '',
+      placement: '',
+      tags: [],
+      condition: '',
+      historicalPeriod: '',
+    })
+    const adminDelete = await fetch(
+      `${baseUrl}/associations/current/props/${adminPropId.toHexString()}`,
+      { method: 'DELETE', headers: { Authorization: 'Bearer ' + authenticatedAccessToken } },
+    )
+    assert.equal(adminDelete.status, 200)
+    assert.equal(
+      await getDatabase().collection<PropDocument>('prop').findOne({ _id: adminPropId }),
+      null,
+    )
   })
 
   test('returns a generic response for an unknown reset email', async () => {

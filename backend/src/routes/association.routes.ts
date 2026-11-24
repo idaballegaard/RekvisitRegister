@@ -4,6 +4,7 @@ import {
   getCurrentAssociationProps,
   postCurrentAssociationProp,
   patchCurrentAssociationProp,
+  deleteCurrentAssociationProp,
   patchCurrentAssociation,
   patchCurrentAssociationStorageLocation,
   deleteCurrentAssociationStorageLocation,
@@ -55,6 +56,12 @@ associationRouter.patch(
   requireAuthentication,
   requirePermission(PERMISSIONS.UPDATE_ASSOCIATION),
   patchCurrentAssociationProp,
+)
+associationRouter.delete(
+  '/associations/current/props/:propId',
+  requireAuthentication,
+  requirePermission(PERMISSIONS.MANAGE_PROPS),
+  deleteCurrentAssociationProp,
 )
 associationRouter.patch(
   '/associations/current',

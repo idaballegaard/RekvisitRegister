@@ -361,6 +361,37 @@ export const openApiDocument = {
           '404': { description: 'Rekvisitten blev ikke fundet i foreningen.' },
         },
       },
+      delete: {
+        summary: 'Slet en rekvisit i den indloggede brugers forening',
+        description: 'Kræver tilladelsen manageProps (foreningsansvarlig eller rekvisitansvarlig). Rekvisittens billeder fjernes også.',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'propId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', pattern: '^[a-fA-F0-9]{24}$' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Rekvisitten og dens billeder er slettet.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['message'],
+                  properties: { message: { type: 'string' } },
+                },
+              },
+            },
+          },
+          '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
+          '403': { description: 'Brugeren må ikke slette rekvisitter.' },
+          '404': { description: 'Rekvisitten blev ikke fundet i foreningen.' },
+          '500': { description: 'Rekvisitten blev slettet, men billedfiler kunne ikke ryddes.' },
+        },
+      },
     },
     '/associations/current': {
       get: {

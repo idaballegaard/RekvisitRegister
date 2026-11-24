@@ -5,11 +5,13 @@ import {
   AssociationPropStorageLocationNotFoundError,
   AssociationPropsError,
   createAssociationProp,
+  deleteAssociationProp,
   getAssociationProps,
   InvalidAssociationPropInputError,
   updateAssociationProp,
   validateUpdateAssociationPropInput,
 } from '../services/prop.service.ts'
+import { PropImageCleanupError } from '../services/prop-image.service.ts'
 import {
   AssociationNotFoundError,
   AssociationStorageLocationNotFoundError,
@@ -109,6 +111,27 @@ export const patchCurrentAssociationProp: RequestHandler = async (request, respo
       return
     }
     if (error instanceof AssociationPropsError) {
+      response.status(500).json({ error: error.message })
+      return
+    }
+    next(error)
+  }
+}
+
+export const deleteCurrentAssociationProp: RequestHandler = async (request, response, next) => {
+  try {
+    const user = getAuthenticatedUser(request)
+    await deleteAssociationProp(
+      user.associationId,
+      typeof request.params.propId === 'string' ? request.params.propId : '',
+    )
+    response.json({ message: 'Rekvisitten er slettet.' })
+  } catch (error) {
+    if (error instanceof AssociationPropNotFoundError) {
+      response.status(404).json({ error: 'Rekvisitten blev ikke fundet.' })
+      return
+    }
+    if (error instanceof PropImageCleanupError) {
       response.status(500).json({ error: error.message })
       return
     }

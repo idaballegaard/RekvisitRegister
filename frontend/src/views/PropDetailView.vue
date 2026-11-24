@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import PropImage from '../components/PropImage.vue'
 import {
   deletePropImage,
   createCurrentAssociationProp,
+  deleteCurrentAssociationProp,
   getCurrentAssociation,
   getCurrentAssociationProps,
   uploadPropImage,
@@ -37,6 +38,11 @@ const imageIndex = ref(0)
 const isUpdatingImage = ref(false)
 const imageErrorMessage = ref('')
 const imageSuccessMessage = ref('')
+const isDeleting = ref(false)
+const deleteErrorMessage = ref('')
+const isDeleteConfirmationOpen = ref(false)
+const cancelDeleteButton = ref<HTMLButtonElement | null>(null)
+let deleteTrigger: HTMLElement | null = null
 const selectedImages = ref<File[]>([])
 const editForm = reactive({
   name: '',
@@ -157,6 +163,73 @@ async function removeImage(): Promise<void> {
     imageErrorMessage.value = error instanceof Error ? error.message : 'Billedet kunne ikke fjernes.'
   } finally {
     isUpdatingImage.value = false
+  }
+}
+
+async function openDeleteConfirmation(event: MouseEvent): Promise<void> {
+  if (!prop.value || !['associationAdmin', 'propManager'].includes(profile.value?.role ?? '')) {
+    return
+  }
+  deleteTrigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
+  isDeleteConfirmationOpen.value = true
+  await nextTick()
+  cancelDeleteButton.value?.focus()
+}
+
+async function closeDeleteConfirmation(): Promise<void> {
+  isDeleteConfirmationOpen.value = false
+  await nextTick()
+  deleteTrigger?.focus()
+  deleteTrigger = null
+}
+
+function handleDeleteDialogKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    void closeDeleteConfirmation()
+    return
+  }
+  if (event.key !== 'Tab') {
+    return
+  }
+  const buttons = Array.from(
+    event.currentTarget instanceof HTMLElement
+      ? event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')
+      : [],
+  )
+  const firstButton = buttons[0]
+  const lastButton = buttons[buttons.length - 1]
+  if (event.shiftKey && document.activeElement === firstButton) {
+    event.preventDefault()
+    lastButton?.focus()
+  } else if (!event.shiftKey && document.activeElement === lastButton) {
+    event.preventDefault()
+    firstButton?.focus()
+  }
+}
+
+async function deleteProp(): Promise<void> {
+  if (!prop.value || !['associationAdmin', 'propManager'].includes(profile.value?.role ?? '')
+    || isDeleting.value) {
+    return
+  }
+  isDeleting.value = true
+  deleteErrorMessage.value = ''
+  try {
+    await deleteCurrentAssociationProp(prop.value.id)
+    isDeleteConfirmationOpen.value = false
+    await backToProps()
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      await router.replace({ name: 'login' })
+      return
+    }
+    deleteErrorMessage.value = error instanceof Error
+      ? error.message
+      : 'Rekvisitten kunne ikke slettes.'
+    await closeDeleteConfirmation()
+  } finally {
+    isDeleting.value = false
   }
 }
 
@@ -288,7 +361,9 @@ async function logout(): Promise<void> {
 onMounted(async () => {
   try {
     const currentUser = await getCurrentUser()
-    if (currentUser.role !== 'associationAdmin') {
+    if (isCreating
+      ? currentUser.role !== 'associationAdmin'
+      : !['associationAdmin', 'propManager'].includes(currentUser.role)) {
       await router.replace({ name: 'profile' })
       return
     }
@@ -341,7 +416,7 @@ onMounted(async () => {
 
       <nav class="border-b border-[#e2e0e0]" aria-label="Adminpanel-faner">
         <ul class="-mb-px flex flex-wrap gap-8 max-[540px]:gap-6">
-          <li>
+          <li v-if="profile?.role === 'associationAdmin'">
             <button
               class="inline-flex h-[54px] items-center border-b-2 border-transparent px-0.5 text-base text-gray-medium hover:text-brand"
               type="button"
@@ -350,7 +425,7 @@ onMounted(async () => {
               Generelt
             </button>
           </li>
-          <li>
+          <li v-if="profile?.role === 'associationAdmin' || profile?.role === 'propManager'">
             <button
               class="inline-flex h-[54px] items-center border-b-2 border-brand px-0.5 text-base font-bold text-brand"
               type="button"
@@ -360,7 +435,7 @@ onMounted(async () => {
               Egne rekvisitter
             </button>
           </li>
-          <li>
+          <li v-if="profile?.role === 'associationAdmin'">
             <button
               class="h-[54px] cursor-not-allowed px-0.5 text-base text-gray-medium/60"
               type="button"
@@ -370,7 +445,7 @@ onMounted(async () => {
               Brugere
             </button>
           </li>
-          <li>
+          <li v-if="profile?.role === 'associationAdmin'">
             <button
               class="h-[54px] cursor-not-allowed px-0.5 text-base text-gray-medium/60"
               type="button"
@@ -424,8 +499,20 @@ onMounted(async () => {
               >
                 Redigér
               </button>
+              <button
+                v-if="profile?.role === 'associationAdmin' || profile?.role === 'propManager'"
+                class="h-10 rounded-[4px] border border-brand px-4 text-base font-semibold text-brand hover:bg-[#f5eded] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-60"
+                type="button"
+                :disabled="isDeleting"
+                @click="openDeleteConfirmation"
+              >
+                {{ isDeleting ? 'Sletter…' : 'Slet rekvisit' }}
+              </button>
             </div>
           </div>
+          <p v-if="deleteErrorMessage" class="mt-4 text-base text-brand" role="alert">
+            {{ deleteErrorMessage }}
+          </p>
           <form v-if="isEditing" class="mt-5 grid gap-5" @submit.prevent="saveProp">
             <h2 id="prop-detail-heading" class="text-2xl font-bold">
               {{ isCreating ? 'Tilføj rekvisit' : 'Redigér rekvisit' }}
@@ -763,6 +850,48 @@ onMounted(async () => {
       <p v-if="saveSuccessMessage" class="mt-5 text-base text-green-800" role="status">
         {{ saveSuccessMessage }}
       </p>
+
+      <div
+        v-if="isDeleteConfirmationOpen && prop"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-gray-dark/60 px-4 py-6"
+        @click.self="closeDeleteConfirmation"
+        @keydown="handleDeleteDialogKeydown"
+      >
+        <section
+          class="w-full max-w-md rounded-lg bg-white p-6 shadow-xl"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-prop-title"
+          aria-describedby="delete-prop-description"
+        >
+          <h2 id="delete-prop-title" class="text-xl font-bold text-brand">
+            Slet rekvisit?
+          </h2>
+          <p id="delete-prop-description" class="mt-3 text-base leading-6 text-gray-dark">
+            Er du sikker på, at du vil slette rekvisitten
+            <span class="font-semibold">"{{ prop.name }}"</span>? Det kan ikke fortrydes.
+          </p>
+          <div class="mt-6 flex justify-end gap-3">
+            <button
+              ref="cancelDeleteButton"
+              class="h-10 rounded-[4px] border border-gray-light px-4 text-sm font-semibold text-gray-dark hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-60"
+              type="button"
+              :disabled="isDeleting"
+              @click="closeDeleteConfirmation"
+            >
+              Annuller
+            </button>
+            <button
+              class="h-10 rounded-[4px] bg-brand px-4 text-sm font-semibold text-white hover:bg-[#7d0202] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-60"
+              type="button"
+              :disabled="isDeleting"
+              @click="deleteProp"
+            >
+              {{ isDeleting ? 'Sletter…' : 'Slet rekvisit' }}
+            </button>
+          </div>
+        </section>
+      </div>
 
       <footer class="mt-8 flex justify-end border-t border-[#e2e0e0] pt-4">
         <button

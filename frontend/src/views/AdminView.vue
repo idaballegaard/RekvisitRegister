@@ -302,13 +302,13 @@ async function removeStorageLocation(locationId: string): Promise<void> {
 onMounted(async () => {
   try {
     const currentUser = await getCurrentUser()
-    if (currentUser.role !== 'associationAdmin') {
+    if (currentUser.role === 'searchUser') {
       await router.replace({ name: 'profile' })
       return
     }
     profile.value = currentUser
     association.value = await getCurrentAssociation()
-    if (route.query.tab === 'props') {
+    if (currentUser.role === 'propManager' || route.query.tab === 'props') {
       propSearch.value = typeof route.query.q === 'string' ? route.query.q : ''
       await openPropsTab()
     }
@@ -337,9 +337,13 @@ onMounted(async () => {
             <p class="mb-2 text-base font-bold tracking-[0.16em] text-brand uppercase">
               {{ association?.name ?? profile?.associationName ?? 'Forening' }}
             </p>
-            <h1 class="text-4xl leading-[1.15] font-bold max-[540px]:text-3xl">Adminpanel</h1>
+            <h1 class="text-4xl leading-[1.15] font-bold max-[540px]:text-3xl">
+              {{ profile?.role === 'propManager' ? 'Rekvisitoversigt' : 'Adminpanel' }}
+            </h1>
             <p class="mt-3 text-lg text-gray-medium">
-              Administrér din forenings oplysninger, rekvisitter og lån.
+              {{ profile?.role === 'propManager'
+                ? 'Find og slet foreningens rekvisitter.'
+                : 'Administrér din forenings oplysninger, rekvisitter og lån.' }}
             </p>
           </div>
           <p v-if="profile" class="mt-4 text-sm text-gray-medium max-[540px]:hidden">
@@ -356,7 +360,7 @@ onMounted(async () => {
 
       <nav class="border-b border-[#e2e0e0]" aria-label="Adminpanel-faner">
         <ul class="-mb-px flex flex-wrap gap-8 max-[540px]:gap-6">
-          <li>
+          <li v-if="profile?.role === 'associationAdmin' || profile?.role === 'propManager'">
             <button
               class="inline-flex h-[54px] items-center border-b-2 px-0.5 text-base"
               :class="activeTab === 'general'
@@ -369,7 +373,7 @@ onMounted(async () => {
               Generelt
             </button>
           </li>
-          <li>
+          <li v-if="profile?.role === 'associationAdmin' || profile?.role === 'propManager'">
             <button
               class="inline-flex h-[54px] items-center border-b-2 px-0.5 text-base"
               :class="activeTab === 'props'
@@ -382,7 +386,7 @@ onMounted(async () => {
               Egne rekvisitter
             </button>
           </li>
-          <li>
+          <li v-if="profile?.role === 'associationAdmin'">
             <button
               class="h-[54px] cursor-not-allowed px-0.5 text-base text-gray-medium/60"
               type="button"
@@ -392,7 +396,7 @@ onMounted(async () => {
               Brugere
             </button>
           </li>
-          <li>
+          <li v-if="profile?.role === 'associationAdmin'">
             <button
               class="h-[54px] cursor-not-allowed px-0.5 text-base text-gray-medium/60"
               type="button"

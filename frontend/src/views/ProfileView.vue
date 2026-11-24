@@ -171,11 +171,13 @@ onMounted(async () => {
           </div>
         </div>
         <RouterLink
-          v-if="profile?.role === 'associationAdmin'"
+          v-if="profile?.role === 'associationAdmin' || profile?.role === 'propManager'"
           class="mt-4 inline-block text-xs text-brand underline underline-offset-2"
-          :to="{ name: 'admin' }"
+          :to="profile.role === 'propManager'
+            ? { name: 'admin', query: { tab: 'props' } }
+            : { name: 'admin' }"
         >
-          Gå til adminpanel →
+          {{ profile.role === 'propManager' ? 'Gå til egne rekvisitter →' : 'Gå til adminpanel →' }}
         </RouterLink>
       </header>
 

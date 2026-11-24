@@ -10,6 +10,7 @@ import type { PropDocument } from '../models/prop.model.ts'
 export class ImageInputError extends Error {}
 export class ImageNotFoundError extends Error {}
 export class ImageLimitError extends Error {}
+export class PropImageCleanupError extends Error {}
 
 const imageIdPattern = /^[a-f\d]{24}$/
 
@@ -126,4 +127,26 @@ export async function deletePropImage(
   )
   if (!result.matchedCount) throw new ImageNotFoundError()
   await unlink(path)
+}
+
+export async function deletePropImages(imageIds: string[]): Promise<void> {
+  const results = await Promise.allSettled(imageIds.map(async (imageId) => {
+    try {
+      await unlink(imagePath(imageId))
+    } catch (error) {
+      if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') {
+        return
+      }
+      throw error
+    }
+  }))
+  const failures = results.flatMap((result) => (
+    result.status === 'rejected' ? [result.reason] : []
+  ))
+  if (failures.length) {
+    throw new PropImageCleanupError(
+      'Rekvisitten blev slettet, men billedfiler kunne ikke ryddes. Kontakt en administrator.',
+      { cause: new AggregateError(failures) },
+    )
+  }
 }

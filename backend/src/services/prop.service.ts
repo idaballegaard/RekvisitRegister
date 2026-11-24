@@ -7,9 +7,11 @@ import type {
 import { findAssociationById } from '../repositories/association.repository.ts'
 import {
   createProp,
+  deletePropByIdForAssociation,
   findPropsByAssociationId,
   updatePropByIdForAssociation,
 } from '../repositories/prop.repository.ts'
+import { deletePropImages } from './prop-image.service.ts'
 
 export class AssociationPropsError extends Error {}
 export class AssociationPropNotFoundError extends Error {}
@@ -154,6 +156,23 @@ export async function updateAssociationProp(
     throw new AssociationPropNotFoundError()
   }
   return prop
+}
+
+export async function deleteAssociationProp(
+  associationId: string,
+  propId: string,
+): Promise<void> {
+  if (!/^[a-f\d]{24}$/i.test(associationId) || !/^[a-f\d]{24}$/i.test(propId)) {
+    throw new AssociationPropNotFoundError()
+  }
+  const deletedProp = await deletePropByIdForAssociation(
+    new ObjectId(propId),
+    new ObjectId(associationId),
+  )
+  if (!deletedProp) {
+    throw new AssociationPropNotFoundError()
+  }
+  await deletePropImages(deletedProp.imageIds ?? [])
 }
 
 function isValidProp(value: unknown): value is WithId<PropDocument> {

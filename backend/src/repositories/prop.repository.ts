@@ -45,3 +45,12 @@ export async function updatePropByIdForAssociation(
 
   return result.matchedCount === 1
 }
+
+export async function deletePropByIdForAssociation(
+  propId: ObjectId,
+  associationId: ObjectId,
+): Promise<WithId<PropDocument> | null> {
+  return getDatabase()
+    .collection<PropDocument>('prop')
+    .findOneAndDelete({ _id: propId, associationId })
+}
