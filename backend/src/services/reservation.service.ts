@@ -1,12 +1,13 @@
 import { ObjectId, type WithId } from 'mongodb'
 import type { AssociationReservation, ReservationDocument } from '../models/reservation.model.ts'
 import type { PropDocument } from '../models/prop.model.ts'
-import { getDatabase } from '../config/database.ts'
+import { getDatabase, withTransaction } from '../config/database.ts'
 import {
   createReservation,
   deleteReservation,
   findOverlappingReservation,
   findReservationsForProp,
+  lockPropForReservation,
 } from '../repositories/reservation.repository.ts'
 
 export class ReservationNotFoundError extends Error {}
@@ -88,28 +89,41 @@ export async function reservePropPeriod(
 ): Promise<AssociationReservation> {
   const associationObjectId = parseId(associationId)
   const propObjectId = parseId(propId)
-  if (!await findPropAvailability(associationObjectId, propObjectId)) {
-    throw new PropUnavailableError()
-  }
   const startDate = new Date(`${input.startDate}T00:00:00.000Z`)
   const endDate = new Date(`${input.endDate}T00:00:00.000Z`)
-  if (await findOverlappingReservation(
-    associationObjectId,
-    propObjectId,
-    startDate,
-    endDate,
-  )) {
-    throw new ReservationConflictError('Rekvisitten er allerede reserveret i den valgte periode.')
-  }
-  const reservation = await createReservation({
-    associationId: associationObjectId,
-    propId: propObjectId,
-    startDate,
-    endDate,
-    createdByUserId: userId,
-    createdAt: new Date(),
+  return withTransaction(async (_database, session) => {
+    const propStatus = await lockPropForReservation(
+      associationObjectId,
+      propObjectId,
+      session,
+    )
+    if (propStatus === 'not-found') {
+      throw new ReservationNotFoundError()
+    }
+    if (propStatus === 'unavailable') {
+      throw new PropUnavailableError()
+    }
+    if (await findOverlappingReservation(
+      associationObjectId,
+      propObjectId,
+      startDate,
+      endDate,
+      session,
+    )) {
+      throw new ReservationConflictError(
+        'Rekvisitten er allerede reserveret i den valgte periode.',
+      )
+    }
+    const reservation = await createReservation({
+      associationId: associationObjectId,
+      propId: propObjectId,
+      startDate,
+      endDate,
+      createdByUserId: userId,
+      createdAt: new Date(),
+    }, session)
+    return toAssociationReservation(reservation)
   })
-  return toAssociationReservation(reservation)
 }
 
 export async function removePropReservation(

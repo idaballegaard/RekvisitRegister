@@ -21,6 +21,7 @@ export interface PropDocument {
   condition: string
   historicalPeriod: string
   imageIds?: string[]
+  reservationRevision?: number
 }
 
 export interface AssociationProp {

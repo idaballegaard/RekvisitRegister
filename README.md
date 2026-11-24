@@ -11,6 +11,7 @@ Backend forbinder til MongoDB via værdier i `backend/.env`.
 5. Start backend med `npm --prefix backend run start-dev`. Når terminalen melder, at den er forbundet, kan du kontrollere forbindelsen på `http://localhost:3000/health`.
 
 Et vellykket health-check svarer med `{"status":"ok","database":"connected"}`.
+Reservationer og oprettelse af den første administrator bruger MongoDB-transaktioner, så databasen skal understøtte transaktioner (for eksempel MongoDB Atlas eller en lokal replica set).
 
 ## Første bruger og forening
 
@@ -65,7 +66,7 @@ På profilsiden kan brugeren sende et e-mailbekræftelseslink til sin adresse. F
 
 ## Backend med TypeScript
 
-Backendens TypeScript-kildekode ligger i `backend/src/` og er opdelt i `config`, `controllers`, `models`, `repositories`, `routes`, `services` og `scripts`. Start udviklingsserveren med `npm --prefix backend run start-dev`, byg med `npm --prefix backend run build`, og kør tests med `npm --prefix backend test`. Auth-integrationstestene bruger en isoleret MongoDB Memory Server og forbinder ikke til din konfigurerede database; første testkørsel kan hente en MongoDB-binary.
+Backendens TypeScript-kildekode ligger i `backend/src/` og er opdelt i `config`, `controllers`, `models`, `repositories`, `routes`, `services` og `scripts`. Start udviklingsserveren med `npm --prefix backend run start-dev`, byg med `npm --prefix backend run build`, og kør tests med `npm --prefix backend test`. Auth-integrationstestene bruger en isoleret MongoDB Memory replica set og forbinder ikke til din konfigurerede database; første testkørsel kan hente en MongoDB-binary.
 
 ## Rekvisitbilleder lokalt
 

@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import express from 'express'
-import { MongoMemoryServer } from 'mongodb-memory-server'
+import { MongoMemoryReplSet } from 'mongodb-memory-server'
 import { ObjectId } from 'mongodb'
 import sharp from 'sharp'
 import type { Server } from 'node:http'
@@ -41,7 +41,7 @@ const originalEnvironment = new Map(
   environmentKeys.map((key) => [key, process.env[key]]),
 )
 
-let mongoServer: MongoMemoryServer | undefined
+let mongoServer: MongoMemoryReplSet | undefined
 let httpServer: Server | undefined
 let baseUrl: string
 let expectedAssociationId: ObjectId
@@ -54,8 +54,8 @@ let imageDirectory: string | undefined
 
 describe('auth endpoints with MongoDB', () => {
   before(async () => {
-    mongoServer = await MongoMemoryServer.create({
-      instance: { dbName: 'auth_integration_test' },
+    mongoServer = await MongoMemoryReplSet.create({
+      replSet: { count: 1, dbName: 'auth_integration_test' },
     })
     process.env.MONGODB_URI = mongoServer.getUri()
     process.env.MONGODB_DB_NAME = 'auth_integration_test'
@@ -782,6 +782,23 @@ describe('auth endpoints with MongoDB', () => {
       { startDate: '2026-12-01', endDate: '2026-12-03' },
       { startDate: '2026-12-04', endDate: '2026-12-05' },
     ])
+
+    const concurrentResponses = await Promise.all([
+      reserve('2027-01-01', '2027-01-03'),
+      reserve('2027-01-02', '2027-01-04'),
+    ])
+    assert.deepEqual(
+      concurrentResponses.map((response) => response.status).sort(),
+      [201, 409],
+    )
+    assert.equal(
+      await getDatabase().collection<ReservationDocument>('reservation').countDocuments({
+        propId,
+        startDate: { $lt: new Date('2027-01-05T00:00:00.000Z') },
+        endDate: { $gt: new Date('2026-12-31T00:00:00.000Z') },
+      }),
+      1,
+    )
 
     const removeResponse = await fetch(`${url}/${firstReservationBody.reservation.id}`, {
       method: 'DELETE',
