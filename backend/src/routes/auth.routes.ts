@@ -5,6 +5,7 @@ import {
   patchPassword,
   patchProfile,
   postConfirmEmail,
+  postAcceptInvitation,
   postForgotPassword,
   postRequestEmailVerification,
   postLogin,
@@ -40,6 +41,15 @@ const passwordResetCompletionRateLimit = rateLimit({
     response.status(429).json({ error: 'For mange forsøg. Prøv igen senere.' })
   },
 })
+const invitationAcceptanceRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_request, response) => {
+    response.status(429).json({ error: 'For mange forsøg. Prøv igen senere.' })
+  },
+})
 const emailVerificationRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 3,
@@ -53,6 +63,7 @@ const emailVerificationRateLimit = rateLimit({
 authRouter.post('/auth/login', loginRateLimit, postLogin)
 authRouter.post('/auth/forgot-password', passwordResetRequestRateLimit, postForgotPassword)
 authRouter.post('/auth/reset-password', passwordResetCompletionRateLimit, postResetPassword)
+authRouter.post('/auth/accept-invitation', invitationAcceptanceRateLimit, postAcceptInvitation)
 authRouter.post(
   '/auth/email-verification',
   requireAuthentication,

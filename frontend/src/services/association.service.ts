@@ -48,6 +48,25 @@ export interface AssociationReservation {
   createdAt: string
 }
 
+export interface AssociationUser {
+  id: string
+  firstName: string
+  lastName: string
+  userName: string
+  email: string
+  role: 'associationAdmin' | 'propManager' | 'searchUser'
+  status: 'active' | 'pending' | 'unverified'
+  createdAt: string
+}
+
+export interface CreateAssociationUserInput {
+  firstName: string
+  lastName: string
+  userName: string
+  email: string
+  role: 'propManager' | 'searchUser'
+}
+
 export type UpdateAssociationPropInput = Omit<AssociationProp, 'id' | 'imageIds'>
 
 export interface UpdateAssociationInput {
@@ -142,6 +161,105 @@ function isAssociationReservation(value: unknown): value is AssociationReservati
     && typeof reservation.endDate === 'string'
     && /^\d{4}-\d{2}-\d{2}$/.test(reservation.endDate)
     && typeof reservation.createdAt === 'string'
+}
+
+function isAssociationUser(value: unknown): value is AssociationUser {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+  const user = value as Partial<AssociationUser>
+  return typeof user.id === 'string'
+    && typeof user.firstName === 'string'
+    && typeof user.lastName === 'string'
+    && typeof user.userName === 'string'
+    && typeof user.email === 'string'
+    && ['associationAdmin', 'propManager', 'searchUser'].includes(user.role ?? '')
+    && ['active', 'pending', 'unverified'].includes(user.status ?? '')
+    && typeof user.createdAt === 'string'
+    && Number.isFinite(Date.parse(user.createdAt))
+}
+
+async function requestAssociationUsers(
+  method: 'GET' | 'POST',
+  input?: CreateAssociationUserInput,
+  userId?: string,
+): Promise<unknown> {
+  const accessToken = sessionStorage.getItem('rekvisit-register.access-token')
+  if (!accessToken) throw new UnauthorizedError('Du er ikke logget ind.')
+
+  let response: Response
+  try {
+    const endpoint = userId
+      ? `/api/associations/current/users/${encodeURIComponent(userId)}/invitation`
+      : '/api/associations/current/users'
+    response = await fetch(endpoint, {
+      method,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        ...(input ? { 'Content-Type': 'application/json' } : {}),
+      },
+      ...(input ? { body: JSON.stringify(input) } : {}),
+    })
+  } catch {
+    throw new Error('Kunne ikke kontakte serveren. Kontrollér, at backend kører.')
+  }
+
+  let body: unknown
+  try {
+    body = await response.json()
+  } catch {
+    if (method === 'GET') {
+      throw new Error('Brugerlisten kunne ikke indlæses. Prøv igen senere.')
+    }
+    if (userId) {
+      throw new Error('Invitationen kunne ikke sendes igen. Prøv igen senere.')
+    }
+    throw new Error(
+      'Brugeroprettelsen kunne ikke gennemføres på grund af en teknisk fejl. '
+      + 'Kontrollér, om brugeren allerede står på listen, før du prøver igen.',
+    )
+  }
+  if (response.status === 401) {
+    clearAuthSession()
+    throw new UnauthorizedError('Dit login er udløbet. Log ind igen.')
+  }
+  if (!response.ok) {
+    if (typeof body === 'object' && body !== null && 'error' in body
+      && typeof body.error === 'string') {
+      throw new Error(body.error)
+    }
+    throw new Error(`Brugerne kunne ikke behandles (HTTP ${response.status}).`)
+  }
+  return body
+}
+
+export async function getCurrentAssociationUsers(): Promise<AssociationUser[]> {
+  const body = await requestAssociationUsers('GET')
+  if (typeof body !== 'object' || body === null || !('users' in body)
+    || !Array.isArray(body.users) || !body.users.every(isAssociationUser)) {
+    throw new Error('Serveren returnerede ugyldige brugeroplysninger.')
+  }
+  return body.users
+}
+
+export async function createCurrentAssociationUser(
+  input: CreateAssociationUserInput,
+): Promise<AssociationUser> {
+  const body = await requestAssociationUsers('POST', input)
+  if (typeof body !== 'object' || body === null || !('user' in body)
+    || !isAssociationUser(body.user) || !('message' in body)
+    || body.message !== 'Brugeren er oprettet, og en invitation er sendt.') {
+    throw new Error('Serveren returnerede ugyldige brugeroplysninger.')
+  }
+  return body.user
+}
+
+export async function resendCurrentAssociationUserInvitation(userId: string): Promise<void> {
+  const body = await requestAssociationUsers('POST', undefined, userId)
+  if (typeof body !== 'object' || body === null || !('message' in body)
+    || body.message !== 'Invitationen er sendt igen.') {
+    throw new Error('Serveren returnerede et ugyldigt invitationssvar.')
+  }
 }
 
 async function imageRequest(

@@ -35,6 +35,11 @@ interface ResetPasswordCredentials {
   newPassword: string
 }
 
+interface AcceptInvitationCredentials {
+  token: string
+  newPassword: string
+}
+
 const ACCESS_TOKEN_KEY = 'rekvisit-register.access-token'
 
 export class UnauthorizedError extends Error {}
@@ -373,6 +378,26 @@ export async function resetPassword(credentials: ResetPasswordCredentials): Prom
   const body: unknown = await parseResponseBody(response)
   if (!response.ok) {
     throw responseError(body, `Adgangskoden kunne ikke nulstilles (HTTP ${response.status}).`)
+  }
+  requireResponseMessage(body)
+}
+
+export async function acceptInvitation(
+  credentials: AcceptInvitationCredentials,
+): Promise<void> {
+  let response: Response
+  try {
+    response = await fetch('/api/auth/accept-invitation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(credentials),
+    })
+  } catch {
+    throw new Error('Kunne ikke kontakte serveren. Kontrollér, at backend kører.')
+  }
+  const body: unknown = await parseResponseBody(response)
+  if (!response.ok) {
+    throw responseError(body, `Kontoen kunne ikke aktiveres (HTTP ${response.status}).`)
   }
   requireResponseMessage(body)
 }

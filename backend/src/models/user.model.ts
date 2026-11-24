@@ -38,6 +38,8 @@ export interface UserDocument {
   emailVerifiedAt?: Date
   emailVerificationTokenHash?: string
   emailVerificationExpiresAt?: Date
+  invitationTokenHash?: string
+  invitationExpiresAt?: Date
   passwordHash: string
   passwordResetTokenHash?: string
   passwordResetExpiresAt?: Date

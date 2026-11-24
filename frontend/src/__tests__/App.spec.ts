@@ -1,6 +1,7 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import PropImage from '../components/PropImage.vue'
+import AcceptInvitationView from '../views/AcceptInvitationView.vue'
 import AdminView from '../views/AdminView.vue'
 import LoginView from '../views/LoginView.vue'
 import ProfileView from '../views/ProfileView.vue'
@@ -274,6 +275,111 @@ describe('AdminView', () => {
       method: 'GET',
       headers: { Authorization: 'Bearer current-test-token' },
     })
+  })
+
+  it('lists association users and invites users to activate their accounts', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const invitedUser = {
+      id: '1234567890abcdef12345678',
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      userName: 'grace.hopper',
+      email: 'grace@example.dk',
+      role: 'propManager',
+      status: 'pending',
+      createdAt: '2026-11-24T10:00:00.000Z',
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        users: [
+          {
+            ...invitedUser,
+            id: 'abcdef1234567890abcdef12',
+            firstName: 'Ada',
+            lastName: 'Lovelace',
+            userName: 'ada.l',
+            email: 'ada@example.dk',
+            role: 'associationAdmin',
+            status: 'active',
+          },
+          invitedUser,
+        ],
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        message: 'Invitationen er sendt igen.',
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        message: 'Brugeren er oprettet, og en invitation er sendt.',
+        user: invitedUser,
+      }), { status: 201 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Skarntyden'))
+    await wrapper.findAll('nav[aria-label="Adminpanel-faner"] button')
+      .find((button) => button.text() === 'Brugere')
+      ?.trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Ada Lovelace'))
+    expect(wrapper.text()).toContain('Aktiv')
+    expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/associations/current/users')
+    await wrapper.findAll('button')
+      .find((button) => button.text() === 'Send invitation igen')
+      ?.trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Invitationen er sendt igen.'))
+    expect(fetchMock.mock.calls[3]?.[0])
+      .toBe(`/api/associations/current/users/${invitedUser.id}/invitation`)
+
+    await wrapper.get('#user-first-name').setValue('Grace')
+    await wrapper.get('#user-last-name').setValue('Hopper')
+    await wrapper.get('#user-user-name').setValue('grace.hopper')
+    await wrapper.get('#user-email').setValue('grace@example.dk')
+    await wrapper.get('#user-role').setValue('propManager')
+    await wrapper.get('#association-user-form').trigger('submit')
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Invitationen er sendt.'))
+    expect(wrapper.text()).toContain('Grace Hopper')
+    expect(wrapper.text()).toContain('Afventer aktivering')
+    expect(fetchMock.mock.calls[4]?.[0]).toBe('/api/associations/current/users')
+    expect(fetchMock.mock.calls[4]?.[1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({
+        firstName: 'Grace',
+        lastName: 'Hopper',
+        userName: 'grace.hopper',
+        email: 'grace@example.dk',
+        role: 'propManager',
+      }),
+    })
+  })
+
+  it('explains invitation failures without exposing a server response-format error', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ users: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response('<html>Server error</html>', { status: 500 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Skarntyden'))
+    await wrapper.findAll('nav[aria-label="Adminpanel-faner"] button')
+      .find((button) => button.text() === 'Brugere')
+      ?.trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Invitér en bruger'))
+    await wrapper.get('#user-first-name').setValue('Grace')
+    await wrapper.get('#user-last-name').setValue('Hopper')
+    await wrapper.get('#user-user-name').setValue('grace.hopper')
+    await wrapper.get('#user-email').setValue('grace@example.dk')
+    await wrapper.get('#association-user-form').trigger('submit')
+
+    await vi.waitFor(() => {
+      expect(wrapper.get('[role="alert"]').text())
+        .toContain('Brugeroprettelsen kunne ikke gennemføres på grund af en teknisk fejl.')
+    })
+    expect(wrapper.text()).not.toContain('Serveren returnerede et ugyldigt svar.')
   })
 
   it('loads and searches the association prop list', async () => {
@@ -1332,6 +1438,38 @@ describe('ResetPasswordView', () => {
       expect(wrapper.get('[role="status"]').text()).toContain('Adgangskoden er nulstillet')
     })
     expect(fetchMock).toHaveBeenCalledWith('/api/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token: 'a'.repeat(64),
+        newPassword: 'a-new-safe-passphrase',
+      }),
+    })
+  })
+})
+
+describe('AcceptInvitationView', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    sessionStorage.clear()
+  })
+
+  it('activates an invited account with the one-time token and chosen password', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ message: 'Kontoen er aktiveret. Du kan nu logge ind.' }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AcceptInvitationView)
+
+    await wrapper.get('#invitation-password').setValue('a-new-safe-passphrase')
+    await wrapper.get('#invitation-password-repeat').setValue('a-new-safe-passphrase')
+    await wrapper.get('form').trigger('submit')
+
+    await vi.waitFor(() => {
+      expect(wrapper.get('[role="status"]').text()).toContain('Kontoen er aktiveret')
+    })
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/accept-invitation', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

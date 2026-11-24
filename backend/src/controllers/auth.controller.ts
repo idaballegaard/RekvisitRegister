@@ -41,6 +41,12 @@ import {
 } from '../services/auth.service.ts'
 import { assertEmailDeliveryConfigured } from '../services/email.service.ts'
 import { getAuthenticatedUser } from '../middleware/auth.middleware.ts'
+import {
+  acceptAssociationUserInvitation,
+  InvalidInvitationError,
+  InvalidInvitationInputError,
+  validateAcceptInvitationInput,
+} from '../services/association-user.service.ts'
 
 export const postLogin: RequestHandler = async (request, response, next) => {
   let input: LoginInput
@@ -237,6 +243,35 @@ export const postResetPassword: RequestHandler = async (request, response, next)
     if (error instanceof InvalidPasswordResetTokenError) {
       response.status(400).json({
         error: 'Nulstillingslinket er ugyldigt eller udløbet. Bed om et nyt link.',
+      })
+      return
+    }
+    next(error)
+  }
+}
+
+export const postAcceptInvitation: RequestHandler = async (request, response, next) => {
+  let input
+  try {
+    input = validateAcceptInvitationInput(request.body)
+  } catch (error) {
+    if (error instanceof InvalidInvitationInputError) {
+      response.status(400).json({
+        error: error.message || 'Invitationsoplysningerne er ugyldige.',
+      })
+      return
+    }
+    next(error)
+    return
+  }
+
+  try {
+    await acceptAssociationUserInvitation(input.token, input.newPassword)
+    response.json({ message: 'Kontoen er aktiveret. Du kan nu logge ind.' })
+  } catch (error) {
+    if (error instanceof InvalidInvitationError) {
+      response.status(400).json({
+        error: 'Invitationslinket er ugyldigt eller udløbet. Kontakt foreningsansvarlig.',
       })
       return
     }

@@ -119,42 +119,6 @@ export const openApiDocument = {
                     description: 'Skal være 12-72 UTF-8 bytes.',
                   },
                 },
-                '/auth/email-verification': {
-                  post: {
-                    summary: 'Send bekræftelseslink til den indloggede brugers e-mail',
-                    security: [{ bearerAuth: [] }],
-                    responses: {
-                      '202': { description: 'Et link er sendt, hvis e-mailadressen ikke allerede er bekræftet.' },
-                      '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
-                      '429': { description: 'For mange forsøg.' },
-                      '503': { description: 'Mailafsendelse er ikke konfigureret eller tilgængelig.' },
-                    },
-                  },
-                },
-                '/auth/confirm-email': {
-                  post: {
-                    summary: 'Bekræft e-mailadresse med et engangslink',
-                    requestBody: {
-                      required: true,
-                      content: {
-                        'application/json': {
-                          schema: {
-                            type: 'object',
-                            required: ['token'],
-                            properties: {
-                              token: { type: 'string', minLength: 64, maxLength: 64 },
-                            },
-                          },
-                        },
-                      },
-                    },
-                    responses: {
-                      '200': { description: 'E-mailadressen er bekræftet.' },
-                      '400': { description: 'Bekræftelsestokenet er ugyldigt, brugt eller udløbet.' },
-                      '429': { description: 'For mange forsøg.' },
-                    },
-                  },
-                },
               },
             },
           },
@@ -162,6 +126,71 @@ export const openApiDocument = {
         responses: {
           '200': { description: 'Adgangskoden er nulstillet.' },
           '400': { description: 'Felter er ugyldige, eller tokenet er ugyldigt, brugt eller udløbet.' },
+          '429': { description: 'For mange forsøg.' },
+        },
+      },
+    },
+    '/auth/accept-invitation': {
+      post: {
+        summary: 'Aktivér en inviteret bruger og vælg adgangskode',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['token', 'newPassword'],
+                properties: {
+                  token: { type: 'string', minLength: 64, maxLength: 64 },
+                  newPassword: {
+                    type: 'string',
+                    format: 'password',
+                    description: 'Skal være 12-72 UTF-8 bytes.',
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'Kontoen er aktiveret.' },
+          '400': { description: 'Felter er ugyldige, eller invitationslinket er brugt eller udløbet.' },
+          '429': { description: 'For mange forsøg.' },
+        },
+      },
+    },
+    '/auth/email-verification': {
+      post: {
+        summary: 'Send bekræftelseslink til den indloggede brugers e-mail',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '202': { description: 'Et link er sendt, hvis e-mailadressen ikke allerede er bekræftet.' },
+          '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
+          '429': { description: 'For mange forsøg.' },
+          '503': { description: 'Mailafsendelse er ikke konfigureret eller tilgængelig.' },
+        },
+      },
+    },
+    '/auth/confirm-email': {
+      post: {
+        summary: 'Bekræft e-mailadresse med et engangslink',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['token'],
+                properties: {
+                  token: { type: 'string', minLength: 64, maxLength: 64 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': { description: 'E-mailadressen er bekræftet.' },
+          '400': { description: 'Bekræftelsestokenet er ugyldigt, brugt eller udløbet.' },
           '429': { description: 'For mange forsøg.' },
         },
       },
@@ -187,6 +216,85 @@ export const openApiDocument = {
           },
           '401': { description: 'Bearer-token mangler, er ugyldigt eller udløbet.' },
           '404': { description: 'Brugerens forening blev ikke fundet.' },
+        },
+      },
+    },
+    '/associations/current/users': {
+      get: {
+        summary: 'Hent brugere i den indloggede brugers forening',
+        description: 'Kræver tilladelsen createAssociationUsers.',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Brugere i den aktuelle forening.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['users'],
+                  properties: {
+                    users: {
+                      type: 'array',
+                      items: { $ref: '#/components/schemas/AssociationUser' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
+          '403': { description: 'Kun foreningsansvarlige må administrere brugere.' },
+        },
+      },
+      post: {
+        summary: 'Opret en bruger og send et invitationslink',
+        description: 'Foreningsansvarlige kan invitere rekvisitansvarlige eller søgebrugere. Linket udløber efter 24 timer.',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['firstName', 'lastName', 'userName', 'email', 'role'],
+                properties: {
+                  firstName: { type: 'string', maxLength: 120 },
+                  lastName: { type: 'string', maxLength: 120 },
+                  userName: { type: 'string', minLength: 3, maxLength: 32 },
+                  email: { type: 'string', format: 'email', maxLength: 254 },
+                  role: { type: 'string', enum: ['propManager', 'searchUser'] },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '201': { description: 'Brugeren blev oprettet, og invitationen blev sendt.' },
+          '400': { description: 'Brugeroplysningerne er ugyldige.' },
+          '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
+          '403': { description: 'Kun foreningsansvarlige må administrere brugere.' },
+          '409': { description: 'Brugernavnet eller e-mailadressen er allerede i brug.' },
+          '503': { description: 'E-mailinvitationen kunne ikke sendes.' },
+        },
+      },
+    },
+    '/associations/current/users/{userId}/invitation': {
+      post: {
+        summary: 'Send invitation til en afventende bruger igen',
+        description: 'Kræver tilladelsen createAssociationUsers. Brugeren skal tilhøre den aktuelle forening.',
+        security: [{ bearerAuth: [] }],
+        parameters: [{
+          name: 'userId',
+          in: 'path',
+          required: true,
+          schema: { type: 'string', pattern: '^[a-fA-F0-9]{24}$' },
+        }],
+        responses: {
+          '200': { description: 'Invitationen blev sendt igen med et nyt 24-timerslink.' },
+          '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
+          '403': { description: 'Kun foreningsansvarlige må administrere brugere.' },
+          '404': { description: 'Den afventende bruger blev ikke fundet i foreningen.' },
+          '503': { description: 'E-mailinvitationen kunne ikke sendes.' },
         },
       },
     },
@@ -715,6 +823,29 @@ export const openApiDocument = {
           role: {
             type: 'string',
             enum: ['associationAdmin', 'propManager', 'searchUser'],
+          },
+          AssociationUser: {
+            type: 'object',
+            required: [
+              'id',
+              'firstName',
+              'lastName',
+              'userName',
+              'email',
+              'role',
+              'status',
+              'createdAt',
+            ],
+            properties: {
+              id: { type: 'string', example: '0123456789abcdef01234567' },
+              firstName: { type: 'string', example: 'Ada' },
+              lastName: { type: 'string', example: 'Lovelace' },
+              userName: { type: 'string', example: 'ada.l' },
+              email: { type: 'string', format: 'email', example: 'ada@example.dk' },
+              role: { type: 'string', enum: ['associationAdmin', 'propManager', 'searchUser'] },
+              status: { type: 'string', enum: ['active', 'pending', 'unverified'] },
+              createdAt: { type: 'string', format: 'date-time' },
+            },
           },
           associationId: { type: 'string', example: 'fedcba9876543210fedcba98' },
           associationName: { type: 'string', example: 'Skarntyden' },

@@ -69,6 +69,13 @@ export function createEmailVerificationUrl(token: string): string {
   return url.toString()
 }
 
+export function createInvitationUrl(token: string): string {
+  const { frontendBaseUrl } = getSmtpConfiguration()
+  const url = new URL('/accept-invitation', frontendBaseUrl)
+  url.searchParams.set('token', token)
+  return url.toString()
+}
+
 async function sendEmail(options: {
   to: string
   subject: string
@@ -116,5 +123,18 @@ export async function sendEmailVerification(email: string, verificationUrl: stri
       'Hvis du ikke har bedt om bekræftelse, kan du ignorere denne e-mail.',
     ].join('\n\n'),
     html: `<p>Bekræft, at denne e-mailadresse tilhører dig.</p><p><a href="${verificationUrl}">Bekræft e-mailadresse</a></p><p>Linket udløber om 24 timer. Hvis du ikke har bedt om bekræftelse, kan du ignorere denne e-mail.</p>`,
+  })
+}
+
+export async function sendUserInvitation(email: string, invitationUrl: string): Promise<void> {
+  await sendEmail({
+    to: email,
+    subject: 'Du er inviteret til Rekvisit Register',
+    text: [
+      'En foreningsansvarlig har oprettet en konto til dig i Rekvisit Register.',
+      `Brug dette link inden for 24 timer til at vælge din adgangskode: ${invitationUrl}`,
+      'Hvis du ikke forventede invitationen, kan du ignorere denne e-mail.',
+    ].join('\n\n'),
+    html: `<p>En foreningsansvarlig har oprettet en konto til dig i Rekvisit Register.</p><p><a href="${invitationUrl}">Aktivér din konto og vælg adgangskode</a></p><p>Linket udløber om 24 timer. Hvis du ikke forventede invitationen, kan du ignorere denne e-mail.</p>`,
   })
 }

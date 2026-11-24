@@ -20,6 +20,11 @@ const router = createRouter({
       component: () => import('../views/VerifyEmailView.vue'),
     },
     {
+      path: '/accept-invitation',
+      name: 'accept-invitation',
+      component: () => import('../views/AcceptInvitationView.vue'),
+    },
+    {
       path: '/profile',
       name: 'profile',
       component: () => import('../views/ProfileView.vue'),

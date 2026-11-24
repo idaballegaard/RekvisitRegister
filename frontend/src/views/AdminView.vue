@@ -4,13 +4,17 @@ import { useRoute, useRouter } from 'vue-router'
 import PropImage from '../components/PropImage.vue'
 import {
   createAssociationStorageLocation,
+  createCurrentAssociationUser,
   deleteAssociationStorageLocation,
   getCurrentAssociation,
   getCurrentAssociationProps,
+  getCurrentAssociationUsers,
+  resendCurrentAssociationUserInvitation,
   updateAssociationStorageLocation,
   updateCurrentAssociation,
   type AssociationProp,
   type AssociationProfile,
+  type AssociationUser,
 } from '../services/association.service'
 import {
   clearAuthSession,
@@ -24,8 +28,22 @@ const route = useRoute()
 const profile = ref<CurrentUserProfile | null>(null)
 const association = ref<AssociationProfile | null>(null)
 const props = ref<AssociationProp[] | null>(null)
-const activeTab = ref<'general' | 'props'>('general')
+const activeTab = ref<'general' | 'props' | 'users'>('general')
 const propSearch = ref('')
+const associationUsers = ref<AssociationUser[] | null>(null)
+const isLoadingUsers = ref(false)
+const usersErrorMessage = ref('')
+const userInvitationErrorMessage = ref('')
+const userInvitationSuccessMessage = ref('')
+const isInvitingUser = ref(false)
+const resendingUserId = ref<string | null>(null)
+const userInvitationForm = reactive({
+  firstName: '',
+  lastName: '',
+  userName: '',
+  email: '',
+  role: 'propManager' as 'propManager' | 'searchUser',
+})
 const isLoadingProps = ref(false)
 const propsErrorMessage = ref('')
 const isLoading = ref(true)
@@ -118,6 +136,91 @@ async function createProp(): Promise<void> {
 
 function openGeneralTab(): void {
   activeTab.value = 'general'
+}
+
+async function openUsersTab(): Promise<void> {
+  if (profile.value?.role !== 'associationAdmin') {
+    return
+  }
+  activeTab.value = 'users'
+  if (associationUsers.value !== null || isLoadingUsers.value) {
+    return
+  }
+  usersErrorMessage.value = ''
+  isLoadingUsers.value = true
+  try {
+    associationUsers.value = await getCurrentAssociationUsers()
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      await router.replace({ name: 'login' })
+      return
+    }
+    usersErrorMessage.value = error instanceof Error
+      ? error.message
+      : 'Foreningens brugere kunne ikke hentes.'
+  } finally {
+    isLoadingUsers.value = false
+  }
+}
+
+async function inviteUser(): Promise<void> {
+  if (profile.value?.role !== 'associationAdmin') {
+    return
+  }
+  userInvitationErrorMessage.value = ''
+  userInvitationSuccessMessage.value = ''
+  isInvitingUser.value = true
+  try {
+    const user = await createCurrentAssociationUser({
+      firstName: userInvitationForm.firstName,
+      lastName: userInvitationForm.lastName,
+      userName: userInvitationForm.userName,
+      email: userInvitationForm.email,
+      role: userInvitationForm.role,
+    })
+    associationUsers.value = [...(associationUsers.value ?? []), user]
+      .sort((left, right) => `${left.firstName} ${left.lastName}`
+        .localeCompare(`${right.firstName} ${right.lastName}`, 'da'))
+    userInvitationForm.firstName = ''
+    userInvitationForm.lastName = ''
+    userInvitationForm.userName = ''
+    userInvitationForm.email = ''
+    userInvitationForm.role = 'propManager'
+    userInvitationSuccessMessage.value = 'Invitationen er sendt. Brugeren kan aktivere sin konto via e-mailen.'
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      await router.replace({ name: 'login' })
+      return
+    }
+    userInvitationErrorMessage.value = error instanceof Error
+      ? error.message
+      : 'Brugeren kunne ikke inviteres.'
+  } finally {
+    isInvitingUser.value = false
+  }
+}
+
+async function resendUserInvitation(userId: string): Promise<void> {
+  if (profile.value?.role !== 'associationAdmin' || resendingUserId.value) {
+    return
+  }
+  userInvitationErrorMessage.value = ''
+  userInvitationSuccessMessage.value = ''
+  resendingUserId.value = userId
+  try {
+    await resendCurrentAssociationUserInvitation(userId)
+    userInvitationSuccessMessage.value = 'Invitationen er sendt igen.'
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      await router.replace({ name: 'login' })
+      return
+    }
+    userInvitationErrorMessage.value = error instanceof Error
+      ? error.message
+      : 'Invitationen kunne ikke sendes igen.'
+  } finally {
+    resendingUserId.value = null
+  }
 }
 
 async function logout(): Promise<void> {
@@ -311,6 +414,8 @@ onMounted(async () => {
     if (currentUser.role === 'propManager' || route.query.tab === 'props') {
       propSearch.value = typeof route.query.q === 'string' ? route.query.q : ''
       await openPropsTab()
+    } else if (currentUser.role === 'associationAdmin' && route.query.tab === 'users') {
+      await openUsersTab()
     }
   } catch (error) {
     if (error instanceof UnauthorizedError) {
@@ -343,7 +448,7 @@ onMounted(async () => {
             <p class="mt-3 text-lg text-gray-medium">
               {{ profile?.role === 'propManager'
                 ? 'Find og slet foreningens rekvisitter.'
-                : 'Administrér din forenings oplysninger, rekvisitter og lån.' }}
+                : 'Administrér din forenings oplysninger, brugere og rekvisitter.' }}
             </p>
           </div>
           <p v-if="profile" class="mt-4 text-sm text-gray-medium max-[540px]:hidden">
@@ -388,10 +493,13 @@ onMounted(async () => {
           </li>
           <li v-if="profile?.role === 'associationAdmin'">
             <button
-              class="h-[54px] cursor-not-allowed px-0.5 text-base text-gray-medium/60"
+              class="inline-flex h-[54px] items-center border-b-2 px-0.5 text-base"
+              :class="activeTab === 'users'
+                ? 'border-brand font-bold text-brand'
+                : 'border-transparent text-gray-medium hover:text-brand'"
               type="button"
-              disabled
-              title="Denne fane er ikke tilgængelig endnu"
+              :aria-current="activeTab === 'users' ? 'page' : undefined"
+              @click="openUsersTab"
             >
               Brugere
             </button>
@@ -736,6 +844,158 @@ onMounted(async () => {
           </p>
         </section>
       </div>
+
+      <section
+        v-if="profile?.role === 'associationAdmin' && activeTab === 'users'"
+        class="py-10"
+        aria-labelledby="users-heading"
+      >
+        <div class="mb-7">
+          <h2 id="users-heading" class="text-2xl font-bold text-brand">Brugere</h2>
+          <p class="mt-2 text-base text-gray-medium">
+            Se foreningens brugere, og invitér nye brugere til at oprette deres adgangskode.
+          </p>
+        </div>
+
+        <form
+          id="association-user-form"
+          class="mb-8 grid max-w-4xl gap-4 rounded border border-[#e2e0e0] p-5 sm:grid-cols-2"
+          @submit.prevent="inviteUser"
+        >
+          <h3 class="text-lg font-bold text-brand sm:col-span-2">Invitér en bruger</h3>
+          <label class="grid gap-2 text-sm text-gray-medium" for="user-first-name">
+            Fornavn
+            <input
+              id="user-first-name"
+              v-model.trim="userInvitationForm.firstName"
+              class="h-11 rounded border border-gray-light px-3 text-base text-gray-dark focus-visible:outline-2 focus-visible:outline-brand"
+              maxlength="120"
+              autocomplete="given-name"
+              required
+            />
+          </label>
+          <label class="grid gap-2 text-sm text-gray-medium" for="user-last-name">
+            Efternavn
+            <input
+              id="user-last-name"
+              v-model.trim="userInvitationForm.lastName"
+              class="h-11 rounded border border-gray-light px-3 text-base text-gray-dark focus-visible:outline-2 focus-visible:outline-brand"
+              maxlength="120"
+              autocomplete="family-name"
+              required
+            />
+          </label>
+          <label class="grid gap-2 text-sm text-gray-medium" for="user-user-name">
+            Brugernavn
+            <input
+              id="user-user-name"
+              v-model.trim="userInvitationForm.userName"
+              class="h-11 rounded border border-gray-light px-3 text-base text-gray-dark focus-visible:outline-2 focus-visible:outline-brand"
+              minlength="3"
+              maxlength="32"
+              autocomplete="off"
+              required
+            />
+          </label>
+          <label class="grid gap-2 text-sm text-gray-medium" for="user-email">
+            E-mail
+            <input
+              id="user-email"
+              v-model.trim="userInvitationForm.email"
+              type="email"
+              class="h-11 rounded border border-gray-light px-3 text-base text-gray-dark focus-visible:outline-2 focus-visible:outline-brand"
+              maxlength="254"
+              autocomplete="email"
+              required
+            />
+          </label>
+          <label class="grid gap-2 text-sm text-gray-medium" for="user-role">
+            Rolle
+            <select
+              id="user-role"
+              v-model="userInvitationForm.role"
+              class="h-11 rounded border border-gray-light px-3 text-base text-gray-dark focus-visible:outline-2 focus-visible:outline-brand"
+            >
+              <option value="propManager">Rekvisitansvarlig</option>
+              <option value="searchUser">Søgebruger</option>
+            </select>
+          </label>
+          <p class="self-end text-sm text-gray-medium">
+            Brugeren får en e-mail med et link, der udløber efter 24 timer, og vælger selv sin adgangskode.
+          </p>
+          <p
+            v-if="userInvitationErrorMessage"
+            class="text-sm text-brand sm:col-span-2"
+            role="alert"
+          >
+            {{ userInvitationErrorMessage }}
+          </p>
+          <p
+            v-if="userInvitationSuccessMessage"
+            class="text-sm text-green-700 sm:col-span-2"
+            role="status"
+          >
+            {{ userInvitationSuccessMessage }}
+          </p>
+          <button
+            class="h-11 w-fit rounded-[4px] bg-brand px-5 text-base font-semibold text-white hover:bg-[#7d0202] disabled:cursor-not-allowed disabled:opacity-60 sm:col-span-2"
+            type="submit"
+            :disabled="isInvitingUser"
+          >
+            {{ isInvitingUser ? 'Sender invitation…' : 'Send invitation' }}
+          </button>
+        </form>
+
+        <p v-if="isLoadingUsers" class="py-6 text-base text-gray-medium" role="status">
+          Henter brugere…
+        </p>
+        <p v-else-if="usersErrorMessage" class="py-4 text-base text-brand" role="alert">
+          {{ usersErrorMessage }}
+        </p>
+        <p v-else-if="associationUsers?.length === 0" class="py-6 text-base text-gray-medium">
+          Der er endnu ikke registreret brugere i foreningen.
+        </p>
+        <ul v-else-if="associationUsers" class="grid gap-3" aria-label="Foreningens brugere">
+          <li
+            v-for="user in associationUsers"
+            :key="user.id"
+            class="flex flex-wrap items-center justify-between gap-3 rounded border border-[#e2e0e0] p-4"
+          >
+            <div>
+              <h3 class="font-semibold">{{ user.firstName }} {{ user.lastName }}</h3>
+              <p class="text-sm text-gray-medium">
+                {{ user.userName }} · {{ user.email }}
+              </p>
+            </div>
+            <div class="flex flex-wrap items-center gap-3 text-sm">
+              <span>{{ roleNames[user.role] }}</span>
+              <span
+                class="rounded-full px-3 py-1 font-semibold"
+                :class="user.status === 'active'
+                  ? 'bg-green-50 text-green-800'
+                  : 'bg-amber-50 text-amber-800'"
+              >
+                {{
+                  user.status === 'active'
+                    ? 'Aktiv'
+                    : user.status === 'pending'
+                      ? 'Afventer aktivering'
+                      : 'E-mail ikke bekræftet'
+                }}
+              </span>
+              <button
+                v-if="user.status === 'pending'"
+                class="text-brand underline underline-offset-2 disabled:opacity-60"
+                type="button"
+                :disabled="isInvitingUser || resendingUserId !== null"
+                @click="resendUserInvitation(user.id)"
+              >
+                {{ resendingUserId === user.id ? 'Sender…' : 'Send invitation igen' }}
+              </button>
+            </div>
+          </li>
+        </ul>
+      </section>
 
       <section
         v-if="profile && association && activeTab === 'props'"

@@ -1,5 +1,7 @@
 import 'dotenv/config'
 import express from 'express'
+import type { ErrorRequestHandler } from 'express'
+import { MongoServerError } from 'mongodb'
 import swaggerUi from 'swagger-ui-express'
 import { closeDatabase, connectToDatabase } from './config/database.ts'
 import { openApiDocument } from './docs/openapi.ts'
@@ -21,6 +23,36 @@ app.use(authRouter)
 if (process.env.NODE_ENV !== 'production') {
   app.use('/api-docs', ...swaggerUi.serve, swaggerUi.setup(openApiDocument))
 }
+
+const handleApiError: ErrorRequestHandler = (error: unknown, _request, response, next) => {
+  if (response.headersSent) {
+    next(error)
+    return
+  }
+
+  if (error instanceof SyntaxError && 'status' in error && error.status === 400) {
+    response.status(400).json({ error: 'Anmodningen indeholder ugyldige data.' })
+    return
+  }
+
+  if (
+    error instanceof MongoServerError
+    && error.code === 20
+    && error.message.includes('Transaction numbers are only allowed')
+  ) {
+    response.status(503).json({
+      error: 'Databasen understøtter ikke denne handling. Kontakt teknisk support.',
+    })
+    return
+  }
+
+  console.error('Uventet API-fejl:', error)
+  response.status(500).json({
+    error: 'Der opstod en teknisk fejl. Prøv igen senere, eller kontakt teknisk support.',
+  })
+}
+
+app.use(handleApiError)
 
 async function startServer(): Promise<void> {
   getAccessTokenKey()

@@ -19,7 +19,14 @@ import associationRouter from '../routes/association.routes.ts'
 import authRouter from '../routes/auth.routes.ts'
 import { createAccessToken } from './access-token.service.ts'
 import { requestEmailVerification, requestPasswordReset } from './auth.service.ts'
-import { hashPassword } from './user.service.ts'
+import { hashPassword, verifyPassword } from './user.service.ts'
+import {
+  acceptAssociationUserInvitation,
+  AssociationUserInvitationDeliveryError,
+  InvalidInvitationError,
+  inviteAssociationUser,
+  resendAssociationUserInvitation,
+} from './association-user.service.ts'
 
 const testPassword = 'integration-test-passphrase'
 const testEmail = 'integration@example.dk'
@@ -819,6 +826,136 @@ describe('auth endpoints with MongoDB', () => {
     )
     assert.equal(propDelete.status, 200)
     assert.equal(await reservationCollection.countDocuments({ propId }), 0)
+  })
+
+  test('invites association users and activates their account with a one-time token', async () => {
+    let invitationUrl = ''
+    const user = await inviteAssociationUser(
+      expectedAssociationId.toHexString(),
+      {
+        firstName: 'New',
+        lastName: 'Prop Manager',
+        userName: `new.manager.${Date.now()}`,
+        email: `new.manager.${Date.now()}@example.dk`,
+        role: ROLES.PROP_MANAGER,
+      },
+      async (_email, url) => {
+        invitationUrl = url
+      },
+    )
+    assert.equal(user.status, 'pending')
+    assert.equal(user.role, ROLES.PROP_MANAGER)
+    const originalToken = new URL(invitationUrl).searchParams.get('token')
+    assert.ok(originalToken)
+    let resentInvitationUrl = ''
+    await resendAssociationUserInvitation(
+      expectedAssociationId.toHexString(),
+      user.id,
+      async (_email, url) => {
+        resentInvitationUrl = url
+      },
+    )
+    const token = new URL(resentInvitationUrl).searchParams.get('token')
+    assert.ok(token)
+    assert.notEqual(token, originalToken)
+    await assert.rejects(
+      acceptAssociationUserInvitation(originalToken, 'new-account-password-123'),
+      InvalidInvitationError,
+    )
+
+    const storedUser = await getDatabase().collection<UserDocument>('users')
+      .findOne({ _id: new ObjectId(user.id) })
+    assert.ok(storedUser)
+    assert.equal(storedUser.emailVerifiedAt, undefined)
+    assert.notEqual(storedUser.invitationTokenHash, token)
+    assert.notEqual(storedUser.passwordHash, token)
+
+    await acceptAssociationUserInvitation(token, 'new-account-password-123')
+    const activeUser = await getDatabase().collection<UserDocument>('users')
+      .findOne({ _id: new ObjectId(user.id) })
+    assert.ok(activeUser?.emailVerifiedAt)
+    assert.equal(activeUser?.invitationTokenHash, undefined)
+    assert.equal(await verifyPassword('new-account-password-123', activeUser.passwordHash), true)
+    await assert.rejects(
+      acceptAssociationUserInvitation(token, 'another-account-password-456'),
+      InvalidInvitationError,
+    )
+  })
+
+  test('removes a pending association user when invitation email delivery fails', async () => {
+    const email = `failed.invite.${Date.now()}@example.dk`
+    await assert.rejects(
+      inviteAssociationUser(
+        expectedAssociationId.toHexString(),
+        {
+          firstName: 'Failed',
+          lastName: 'Invitation',
+          userName: `failed.invite.${Date.now()}`,
+          email,
+          role: ROLES.SEARCH_USER,
+        },
+        async () => {
+          throw new Error('test delivery failure')
+        },
+      ),
+      AssociationUserInvitationDeliveryError,
+    )
+    assert.equal(await getDatabase().collection<UserDocument>('users').findOne({ email }), null)
+  })
+
+  test('limits association user management to association admins and current association users', async () => {
+    const manager = await getDatabase().collection<UserDocument>('users')
+      .findOne({ userName: 'integration.manager' })
+    assert.ok(manager)
+    const managerToken = await createAccessToken({
+      userId: manager._id.toHexString(),
+      firstName: manager.firstName,
+      lastName: manager.lastName,
+      userName: manager.userName,
+      role: manager.role,
+      associationId: manager.associationId.toHexString(),
+    })
+    const endpoint = `${baseUrl}/associations/current/users`
+    const adminHeaders = {
+      Authorization: 'Bearer ' + authenticatedAccessToken,
+      'Content-Type': 'application/json',
+    }
+
+    const listResponse = await fetch(endpoint, {
+      headers: { Authorization: 'Bearer ' + authenticatedAccessToken },
+    })
+    assert.equal(listResponse.status, 200)
+    const body = await listResponse.json() as {
+      users: Array<Record<string, unknown> & { userName: string }>
+    }
+    assert.ok(body.users.some(({ userName }) => userName.startsWith('new.manager.')))
+    assert.ok(body.users.every((user) => !('passwordHash' in user)
+      && !('invitationTokenHash' in user)))
+
+    assert.equal((await fetch(endpoint, {
+      headers: { Authorization: 'Bearer ' + managerToken },
+    })).status, 403)
+    assert.equal((await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + managerToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        firstName: 'Not',
+        lastName: 'Authorized',
+        userName: 'not.authorized',
+        email: 'not.authorized@example.dk',
+        role: ROLES.PROP_MANAGER,
+      }),
+    })).status, 403)
+
+    const invalidInputResponse = await fetch(endpoint, {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify({ firstName: 'Missing required fields' }),
+    })
+    assert.equal(invalidInputResponse.status, 400)
   })
 
   test('returns a generic response for an unknown reset email', async () => {

@@ -18,10 +18,33 @@ import {
   getCurrentPropReservations,
   postCurrentPropReservation,
 } from '../controllers/reservation.controller.ts'
+import {
+  getCurrentAssociationUsers,
+  postCurrentAssociationUser,
+  postCurrentAssociationUserInvitation,
+} from '../controllers/association-user.controller.ts'
 
 const associationRouter = Router()
 
 associationRouter.get('/associations/current', requireAuthentication, getCurrentAssociation)
+associationRouter.get(
+  '/associations/current/users',
+  requireAuthentication,
+  requirePermission(PERMISSIONS.CREATE_ASSOCIATION_USERS),
+  getCurrentAssociationUsers,
+)
+associationRouter.post(
+  '/associations/current/users',
+  requireAuthentication,
+  requirePermission(PERMISSIONS.CREATE_ASSOCIATION_USERS),
+  postCurrentAssociationUser,
+)
+associationRouter.post(
+  '/associations/current/users/:userId/invitation',
+  requireAuthentication,
+  requirePermission(PERMISSIONS.CREATE_ASSOCIATION_USERS),
+  postCurrentAssociationUserInvitation,
+)
 associationRouter.get(
   '/associations/current/props',
   requireAuthentication,
