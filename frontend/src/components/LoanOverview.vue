@@ -96,7 +96,9 @@ async function decideLoan(decision: LoanDecision): Promise<void> {
     await decideCurrentAssociationLoan(loan.id, decision)
     loan.status = decision
     loans.value = loans.value.map((entry) => entry.id === loan.id ? { ...entry, status: decision } : entry)
-    decisionSuccess.value = decision === 'Godkendt' ? 'Lånet er godkendt.' : 'Lånet er afvist.'
+    decisionSuccess.value = decision === 'Godkendt'
+      ? 'Lånet er godkendt.'
+      : decision === 'Afvist' ? 'Lånet er afvist.' : 'Lånet er markeret som afleveret.'
   } catch (error) {
     if (error instanceof UnauthorizedError) {
       await router.replace({ name: 'login' })
@@ -164,6 +166,11 @@ onMounted(loadLoans)
             {{ isDeciding ? 'Behandler…' : 'Godkend' }}
           </button>
           <button type="button" :disabled="isDeciding" class="rounded border border-brand px-5 py-2.5 font-semibold text-brand hover:bg-[#f5eded] disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand" @click="decideLoan('Afvist')">Afvis</button>
+        </div>
+        <div v-if="selectedLoan.type === 'loan' && selectedLoan.status === 'Godkendt'" class="mt-6">
+          <button type="button" :disabled="isDeciding" class="rounded bg-brand px-5 py-2.5 font-semibold text-white hover:bg-[#7d0202] disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand" @click="decideLoan('Afleveret')">
+            {{ isDeciding ? 'Behandler…' : 'Markér som afleveret' }}
+          </button>
         </div>
       </div>
     </template>

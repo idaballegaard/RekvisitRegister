@@ -11,7 +11,7 @@ Backend forbinder til MongoDB via værdier i `backend/.env`.
 5. Start backend med `npm --prefix backend run start-dev`. Når terminalen melder, at den er forbundet, kan du kontrollere forbindelsen på `http://localhost:3000/health`.
 
 Et vellykket health-check svarer med `{"status":"ok","database":"connected"}`.
-Reservationer, afgørelser af låneanmodninger, brugeroprettelse og oprettelse af den første administrator bruger MongoDB-transaktioner, så databasen skal understøtte transaktioner (for eksempel MongoDB Atlas eller en lokal replica set). Godkendte lån og reservationer for samme rekvisit kan ikke overlappe, heller ikke på start- eller slutdagen.
+Reservationer, afgørelser og aflevering af lån, brugeroprettelse og oprettelse af den første administrator bruger MongoDB-transaktioner, så databasen skal understøtte transaktioner (for eksempel MongoDB Atlas eller en lokal replica set). Godkendte lån og reservationer for samme rekvisit kan ikke overlappe, heller ikke på start- eller slutdagen. Når lånerforeningens foreningsansvarlige markerer et godkendt lån som afleveret, frigives rekvisitten straks uden bekræftelse fra ejerforeningen.
 
 ## Første bruger og forening
 

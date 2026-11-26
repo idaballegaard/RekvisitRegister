@@ -984,7 +984,8 @@ describe('auth endpoints with MongoDB', () => {
     assert.equal((await decide(first, 'Godkendt', outsiderToken)).status, 404)
     assert.equal((await decide(first, 'Godkendt', managerToken)).status, 403)
     assert.equal((await fetch(`${baseUrl}/associations/current/loans/${first}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{"status":"Godkendt"}' })).status, 401)
-    assert.equal((await decide(first, 'Afleveret')).status, 400)
+    assert.equal((await decide(first, 'Afleveret', borrowerToken)).status, 409)
+    assert.equal((await decide(first, 'Afleveret')).status, 404)
     assert.equal((await decide(first, 'Godkendt')).status, 200)
     assert.equal((await decide(first, 'Afvist')).status, 409)
     const detail = await fetch(`${baseUrl}/associations/current/loans/${first}`, { headers: { Authorization: 'Bearer ' + borrowerToken } })
@@ -1016,6 +1017,26 @@ describe('auth endpoints with MongoDB', () => {
     const raceDecision = await makeLoan('2027-03-01', '2027-03-02')
     const simultaneousDecisions = await Promise.all([decide(raceDecision, 'Godkendt'), decide(raceDecision, 'Afvist')])
     assert.deepEqual(simultaneousDecisions.map((response) => response.status).sort(), [200, 409])
+    assert.equal((await decide(first, 'Afleveret', outsiderToken)).status, 404)
+    assert.equal((await decide(first, 'Afleveret', await token(borrowerId, ROLES.PROP_MANAGER))).status, 403)
+    assert.equal((await decide(overlapping, 'Afleveret', borrowerToken)).status, 409)
+    assert.equal((await decide(first, 'Afleveret', ownerToken)).status, 404)
+    const returnResponses = await Promise.all([
+      decide(first, 'Afleveret', borrowerToken),
+      decide(first, 'Afleveret', borrowerToken),
+    ])
+    assert.deepEqual(returnResponses.map((response) => response.status).sort(), [200, 409])
+    for (const accessToken of [ownerToken, borrowerToken]) {
+      const response = await fetch(`${baseUrl}/associations/current/loans/${first}`, {
+        headers: { Authorization: 'Bearer ' + accessToken },
+      })
+      assert.equal((await response.json() as { loan: { status: string } }).loan.status, 'Afleveret')
+    }
+    assert.equal((await reserve('2026-12-01', '2026-12-03')).status, 201)
+    const afterReturn = await makeLoan('2026-12-01', '2026-12-03')
+    assert.equal((await decide(afterReturn, 'Godkendt')).status, 409)
+    await reservations.deleteMany({ propId, startDate: new Date('2026-12-01T00:00:00Z') })
+    assert.equal((await decide(afterReturn, 'Godkendt')).status, 200)
     await loans.deleteMany({ propId })
     await reservations.deleteMany({ propId })
     await props.deleteOne({ _id: propId })

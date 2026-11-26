@@ -9,11 +9,12 @@ export class AssociationLoanNotFoundError extends Error {}
 export class InvalidLoanDecisionError extends Error {}
 export class LoanDecisionConflictError extends Error {}
 
-export type LoanDecision = 'Godkendt' | 'Afvist'
+export type LoanDecision = 'Godkendt' | 'Afvist' | 'Afleveret'
 
 export function validateLoanDecision(input: unknown): LoanDecision {
   if (typeof input !== 'object' || input === null || Array.isArray(input)
-    || !('status' in input) || (input.status !== 'Godkendt' && input.status !== 'Afvist')) {
+    || !('status' in input) || (input.status !== 'Godkendt' && input.status !== 'Afvist'
+      && input.status !== 'Afleveret')) {
     throw new InvalidLoanDecisionError('Vælg en gyldig afgørelse for lånet.')
   }
   return input.status
@@ -108,11 +109,32 @@ export async function decideAssociationLoan(
   loanId: string,
   decision: LoanDecision,
 ): Promise<void> {
-  const ownerId = parseAssociationId(associationId)
+  const associationObjectId = parseAssociationId(associationId)
   if (!/^[a-f\d]{24}$/i.test(loanId)) {
     throw new AssociationLoanNotFoundError('Lånet blev ikke fundet.')
   }
   const id = new ObjectId(loanId)
+  if (decision === 'Afleveret') {
+    await withTransaction(async (database, session) => {
+      const loans = database.collection<LoanDocument>('loan')
+      const loan = await loans.findOne({ _id: id, borrowerAssociationId: associationObjectId }, { session })
+      if (!loan) throw new AssociationLoanNotFoundError('Lånet blev ikke fundet.')
+      if (!isValidLoan(loan)) throw new AssociationLoansError('Lånet indeholder ugyldige oplysninger.')
+      if (loan.status !== 'Godkendt') {
+        throw new LoanDecisionConflictError('Kun godkendte lån kan markeres som afleveret. Opdatér lånet for at se den aktuelle status.')
+      }
+      const result = await loans.updateOne(
+        { _id: id, borrowerAssociationId: associationObjectId, status: 'Godkendt' },
+        { $set: { status: 'Afleveret' } },
+        { session },
+      )
+      if (result.matchedCount !== 1) {
+        throw new LoanDecisionConflictError('Lånets status er ændret. Opdatér lånet for at se den aktuelle status.')
+      }
+    })
+    return
+  }
+  const ownerId = associationObjectId
   await withTransaction(async (database, session) => {
     const loans = database.collection<LoanDocument>('loan')
     const loan = await loans.findOne({ _id: id, ownerAssociationId: ownerId }, { session })

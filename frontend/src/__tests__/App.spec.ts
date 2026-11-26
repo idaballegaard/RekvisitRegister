@@ -1584,6 +1584,87 @@ describe('AdminView', () => {
     expect(wrapper.get('tbody').text()).toContain('Afvist')
   })
 
+  it('lets the borrower mark an approved loan as returned and updates the overview', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    routeState.query.tab = 'loans'
+    const loan = { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', type: 'loan', propName: 'Kuffert', associationName: 'Ejer', startDate: '2026-11-12', endDate: '2026-11-19', status: 'Godkendt', borrowerMessage: null }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ loans: [loan] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ loan }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'Afleveret' }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+    await vi.waitFor(() => expect(wrapper.find('tbody button').exists()).toBe(true))
+    await wrapper.get('tbody button').trigger('click')
+    await vi.waitFor(() => expect(wrapper.findAll('button').some((button) => button.text() === 'Markér som afleveret')).toBe(true))
+    await wrapper.findAll('button').find((button) => button.text() === 'Markér som afleveret')?.trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Lånet er markeret som afleveret.'))
+    expect(fetchMock).toHaveBeenLastCalledWith(`/api/associations/current/loans/${loan.id}`, {
+      method: 'PATCH',
+      headers: { Authorization: 'Bearer current-test-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'Afleveret' }),
+    })
+    expect(wrapper.get('dd span').text()).toBe('Afleveret')
+    expect(wrapper.get('dd span').classes()).toContain('bg-blue-100')
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Markér som afleveret')).toBe(false)
+    await wrapper.findAll('button').find((button) => button.text().includes('Tilbage til lån'))?.trigger('click')
+    expect(wrapper.get('tbody').text()).toContain('Afleveret')
+  })
+
+  it('shows return errors and reloads the actual loan status', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    routeState.query.tab = 'loans'
+    const loan = { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', type: 'loan', propName: 'Kuffert', associationName: 'Ejer', startDate: '2026-11-12', endDate: '2026-11-19', status: 'Godkendt', borrowerMessage: null }
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ loans: [loan] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ loan }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'Lånets status er ændret.' }), { status: 409 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ loan: { ...loan, status: 'Afleveret' } }), { status: 200 })))
+    const wrapper = mount(AdminView)
+    await vi.waitFor(() => expect(wrapper.find('tbody button').exists()).toBe(true))
+    await wrapper.get('tbody button').trigger('click')
+    await vi.waitFor(() => expect(wrapper.findAll('button').some((button) => button.text() === 'Markér som afleveret')).toBe(true))
+    await wrapper.findAll('button').find((button) => button.text() === 'Markér som afleveret')?.trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('[role="alert"]').text()).toContain('Lånets status er ændret.'))
+    expect(wrapper.get('dd span').text()).toBe('Godkendt')
+    await wrapper.findAll('button').find((button) => button.text() === 'Opdatér lånet')?.trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('dd span').text()).toBe('Afleveret'))
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Markér som afleveret')).toBe(false)
+  })
+
+  it('does not offer return for owner loans or non-approved borrower loans', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    routeState.query.tab = 'loans'
+    const statuses = ['Afventer svar', 'Afvist', 'Afleveret', 'Annulleret'] as const
+    const loans = statuses.map((status, index) => ({
+      id: `${index}`.repeat(24), type: 'loan', propName: `Rekvisit ${index}`, associationName: 'Ejer',
+      startDate: '2026-11-12', endDate: '2026-11-19', status, borrowerMessage: null,
+    }))
+    const lent = { ...loans[0]!, id: 'aaaaaaaaaaaaaaaaaaaaaaaa', type: 'lending', status: 'Godkendt' }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ loans: [...loans, lent] }), { status: 200 }))
+    for (const loan of [...loans, lent]) fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ loan }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+    await vi.waitFor(() => expect(wrapper.findAll('tbody tr')).toHaveLength(4))
+    for (const index of statuses.keys()) {
+      await wrapper.findAll('tbody tr')[index]!.get('button').trigger('click')
+      await vi.waitFor(() => expect(wrapper.find('dd span').exists()).toBe(true))
+      expect(wrapper.findAll('button').some((button) => button.text() === 'Markér som afleveret')).toBe(false)
+      await wrapper.findAll('button').find((button) => button.text().includes('Tilbage til lån'))?.trigger('click')
+    }
+    await wrapper.get('nav[aria-label="Oversigt over lån og udlån"]').findAll('button')[1]?.trigger('click')
+    await wrapper.get('tbody button').trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('dd span').text()).toBe('Godkendt'))
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Markér som afleveret')).toBe(false)
+  })
+
   it('does not offer decisions for a borrower with a pending loan', async () => {
     sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
     routeState.query.tab = 'loans'

@@ -301,8 +301,8 @@ export const openApiDocument = {
         },
       },
       patch: {
-        summary: 'Godkend eller afvis en låneanmodning',
-        description: 'Kun ejerforeningens foreningsansvarlige kan behandle lån, der afventer svar. Godkendelse kræver en periode uden overlappende reservationer eller godkendte lån. Start- og slutdag er inkluderet.',
+        summary: 'Godkend, afvis eller registrér aflevering af et lån',
+        description: 'Ejerforeningens foreningsansvarlige kan godkende eller afvise lån, der afventer svar. Lånerforeningens foreningsansvarlige kan markere godkendte lån som afleveret uden bekræftelse; rekvisitten frigives straks. Godkendelse kræver en periode uden overlappende reservationer eller godkendte lån. Start- og slutdag er inkluderet.',
         security: [{ bearerAuth: [] }],
         parameters: [{ name: 'loanId', in: 'path', required: true, schema: { type: 'string' } }],
         requestBody: {
@@ -312,7 +312,7 @@ export const openApiDocument = {
               schema: {
                 type: 'object',
                 required: ['status'],
-                properties: { status: { type: 'string', enum: ['Godkendt', 'Afvist'] } },
+                properties: { status: { type: 'string', enum: ['Godkendt', 'Afvist', 'Afleveret'] } },
               },
             },
           },
@@ -325,7 +325,7 @@ export const openApiDocument = {
                 schema: {
                   type: 'object',
                   required: ['status'],
-                  properties: { status: { type: 'string', enum: ['Godkendt', 'Afvist'] } },
+                  properties: { status: { type: 'string', enum: ['Godkendt', 'Afvist', 'Afleveret'] } },
                 },
               },
             },
@@ -333,8 +333,8 @@ export const openApiDocument = {
           '400': { description: 'Ugyldig afgørelse.' },
           '401': { description: 'Login mangler, er ugyldigt eller udløbet.' },
           '403': { description: 'Brugeren er ikke foreningsansvarlig.' },
-          '404': { description: 'Lånet blev ikke fundet for ejerforeningen.' },
-          '409': { description: 'Lånet afventer ikke svar, rekvisitten mangler, eller perioden overlapper.' },
+          '404': { description: 'Lånet blev ikke fundet for den forening, som må udføre handlingen.' },
+          '409': { description: 'Lånets status tillader ikke handlingen, rekvisitten mangler, eller perioden overlapper.' },
           '500': { description: 'Lånet kunne ikke behandles.' },
         },
       },
