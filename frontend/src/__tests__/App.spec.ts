@@ -1453,6 +1453,43 @@ describe('AdminView', () => {
     })
   })
 
+  it('uses the correct status colors in both the overview and details', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    routeState.query.tab = 'loans'
+    const statuses = [
+      ['Afventer svar', 'bg-yellow-100', 'text-yellow-800'],
+      ['Godkendt', 'bg-green-100', 'text-green-800'],
+      ['Afvist', 'bg-red-100', 'text-red-800'],
+      ['Afleveret', 'bg-blue-100', 'text-blue-800'],
+      ['Annulleret', 'bg-gray-100', 'text-gray-800'],
+    ] as const
+    const loans = statuses.map(([status], index) => ({
+      id: `${index}`.repeat(24), type: 'loan', propName: `Rekvisit ${index}`,
+      associationName: 'Ejerforening', startDate: '2026-11-12', endDate: '2026-11-19', status,
+    }))
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ loans }), { status: 200 }))
+    for (const loan of loans) {
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ loan: { ...loan, borrowerMessage: null } }), { status: 200 }))
+    }
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+    await vi.waitFor(() => expect(wrapper.findAll('tbody tr')).toHaveLength(statuses.length))
+
+    for (const [index, [status, background, text]] of statuses.entries()) {
+      const row = wrapper.findAll('tbody tr')[index]!
+      const badge = row.findAll('span').find((span) => span.text() === status)!
+      expect(badge.classes()).toEqual(expect.arrayContaining([background, text]))
+      await row.get('button').trigger('click')
+      await vi.waitFor(() => expect(wrapper.find('dd span').exists()).toBe(true))
+      expect(wrapper.get('dd span').text()).toBe(status)
+      expect(wrapper.get('dd span').classes()).toEqual(expect.arrayContaining([background, text]))
+      await wrapper.findAll('button').find((button) => button.text().includes('Tilbage til lån'))?.trigger('click')
+    }
+  })
+
   it('opens loan details for each direction and returns to the selected tab', async () => {
     sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
     const borrowed = { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', type: 'loan', propName: 'Lånt kuffert', associationName: 'Ejerforeningen', startDate: '2026-11-12', endDate: '2026-11-19', status: 'Godkendt' }

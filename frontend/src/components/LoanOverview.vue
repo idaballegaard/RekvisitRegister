@@ -13,6 +13,14 @@ import { UnauthorizedError } from '../services/auth.service'
 
 type LoanType = 'Lån' | 'Udlån'
 
+const statusClasses: Record<AssociationLoan['status'], string> = {
+  'Afventer svar': 'bg-yellow-100 text-yellow-800',
+  'Godkendt': 'bg-green-100 text-green-800',
+  'Afvist': 'bg-red-100 text-red-800',
+  'Afleveret': 'bg-blue-100 text-blue-800',
+  'Annulleret': 'bg-gray-100 text-gray-800',
+}
+
 const router = useRouter()
 const loans = ref<AssociationLoan[]>([])
 const isLoading = ref(true)
@@ -127,7 +135,11 @@ onMounted(loadLoans)
         <dl class="mt-6 border-t border-[#e2e0e0]">
           <div class="grid gap-1 border-b border-[#e2e0e0] py-4 sm:grid-cols-3">
             <dt class="text-gray-medium">Status</dt>
-            <dd class="font-semibold sm:col-span-2">{{ selectedLoan.status }}</dd>
+            <dd class="sm:col-span-2">
+              <span class="inline-block rounded px-2 py-1 text-sm" :class="statusClasses[selectedLoan.status]">
+                {{ selectedLoan.status }}
+              </span>
+            </dd>
           </div>
           <div class="grid gap-1 border-b border-[#e2e0e0] py-4 sm:grid-cols-3">
             <dt class="text-gray-medium">{{ selectedLoan.type === 'loan' ? 'Ejerforening' : 'Lånerforening' }}</dt>
@@ -216,9 +228,7 @@ onMounted(loadLoans)
             <td class="px-3 py-4">
               <span
                 class="inline-block rounded px-2 py-1 text-sm"
-                :class="loan.status === 'Afventer svar'
-                  ? 'bg-[#f5eded] text-brand'
-                  : 'bg-[#f1efef] text-gray-dark'"
+                :class="statusClasses[loan.status]"
               >
                 {{ loan.status }}
               </span>
