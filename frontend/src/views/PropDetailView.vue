@@ -447,6 +447,10 @@ async function openGeneralTab(): Promise<void> {
   await router.push({ name: 'admin', query: { tab: 'general' } })
 }
 
+async function openLoansTab(): Promise<void> {
+  await router.push({ name: 'admin', query: { tab: 'loans' } })
+}
+
 async function logout(): Promise<void> {
   clearAuthSession()
   await router.replace({ name: 'login' })
@@ -557,10 +561,9 @@ onMounted(async () => {
           </li>
           <li v-if="profile?.role === 'associationAdmin'">
             <button
-              class="h-[54px] cursor-not-allowed px-0.5 text-base text-gray-medium/60"
+              class="inline-flex h-[54px] items-center border-b-2 border-transparent px-0.5 text-base text-gray-medium hover:text-brand"
               type="button"
-              disabled
-              title="Denne fane er ikke tilgængelig endnu"
+              @click="openLoansTab"
             >
               Lån
             </button>

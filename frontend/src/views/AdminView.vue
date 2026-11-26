@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import LoanOverview from '../components/LoanOverview.vue'
 import PropImage from '../components/PropImage.vue'
 import {
   createAssociationStorageLocation,
@@ -28,7 +29,7 @@ const route = useRoute()
 const profile = ref<CurrentUserProfile | null>(null)
 const association = ref<AssociationProfile | null>(null)
 const props = ref<AssociationProp[] | null>(null)
-const activeTab = ref<'general' | 'props' | 'users'>('general')
+const activeTab = ref<'general' | 'props' | 'users' | 'loans'>('general')
 const propSearch = ref('')
 const associationUsers = ref<AssociationUser[] | null>(null)
 const isLoadingUsers = ref(false)
@@ -136,6 +137,12 @@ async function createProp(): Promise<void> {
 
 function openGeneralTab(): void {
   activeTab.value = 'general'
+}
+
+function openLoansTab(): void {
+  if (profile.value?.role === 'associationAdmin') {
+    activeTab.value = 'loans'
+  }
 }
 
 async function openUsersTab(): Promise<void> {
@@ -416,6 +423,8 @@ onMounted(async () => {
       await openPropsTab()
     } else if (currentUser.role === 'associationAdmin' && route.query.tab === 'users') {
       await openUsersTab()
+    } else if (currentUser.role === 'associationAdmin' && route.query.tab === 'loans') {
+      openLoansTab()
     }
   } catch (error) {
     if (error instanceof UnauthorizedError) {
@@ -448,7 +457,7 @@ onMounted(async () => {
             <p class="mt-3 text-lg text-gray-medium">
               {{ profile?.role === 'propManager'
                 ? 'Find og slet foreningens rekvisitter.'
-                : 'Administrér din forenings oplysninger, brugere og rekvisitter.' }}
+                : 'Administrér din forenings oplysninger, rekvisitter og lån.' }}
             </p>
           </div>
           <p v-if="profile" class="mt-4 text-sm text-gray-medium max-[540px]:hidden">
@@ -506,10 +515,13 @@ onMounted(async () => {
           </li>
           <li v-if="profile?.role === 'associationAdmin'">
             <button
-              class="h-[54px] cursor-not-allowed px-0.5 text-base text-gray-medium/60"
+              class="inline-flex h-[54px] items-center border-b-2 px-0.5 text-base"
+              :class="activeTab === 'loans'
+                ? 'border-brand font-bold text-brand'
+                : 'border-transparent text-gray-medium hover:text-brand'"
               type="button"
-              disabled
-              title="Denne fane er ikke tilgængelig endnu"
+              :aria-current="activeTab === 'loans' ? 'page' : undefined"
+              @click="openLoansTab"
             >
               Lån
             </button>
@@ -844,6 +856,8 @@ onMounted(async () => {
           </p>
         </section>
       </div>
+
+      <LoanOverview v-if="profile?.role === 'associationAdmin' && activeTab === 'loans'" />
 
       <section
         v-if="profile?.role === 'associationAdmin' && activeTab === 'users'"

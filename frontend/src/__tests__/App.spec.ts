@@ -265,7 +265,8 @@ describe('AdminView', () => {
       button.text().includes('Tilføj lager') && !button.attributes('disabled')
     ))).toBe(true)
     expect(wrapper.get('button[aria-label="Log ud"]').classes()).toContain('bg-brand')
-    expect(wrapper.find('button:disabled').exists()).toBe(true)
+    expect(wrapper.findAll('nav button').find((button) => button.text() === 'Lån')
+      ?.attributes('disabled')).toBeUndefined()
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/auth/me')
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
       headers: { Authorization: expect.stringMatching(/^Bearer /) },
@@ -403,7 +404,8 @@ describe('AdminView', () => {
     await vi.waitFor(() => {
       expect(wrapper.text()).toContain('Kontaktoplysninger')
     })
-    expect(wrapper.find('button[disabled]').text()).not.toContain('Egne rekvisitter')
+    expect(wrapper.findAll('nav button').find((button) => button.text() === 'Egne rekvisitter')
+      ?.attributes('disabled')).toBeUndefined()
     await wrapper.findAll('button')
       .find((button) => button.text() === 'Egne rekvisitter')
       ?.trigger('click')
@@ -722,6 +724,11 @@ describe('AdminView', () => {
     expect(wrapper.findAll('button').some((button) => button.text() === 'Slet rekvisit')).toBe(true)
     expect(wrapper.get('[role="img"]').attributes('aria-label'))
       .toBe('Billedområde for Træstol')
+
+    await wrapper.findAll('nav button')
+      .find((button) => button.text() === 'Lån')
+      ?.trigger('click')
+    expect(routerPush).toHaveBeenCalledWith({ name: 'admin', query: { tab: 'loans' } })
 
     await wrapper.findAll('button')
       .find((button) => button.text().includes('Tilbage til egne rekvisitter'))
@@ -1392,12 +1399,49 @@ describe('AdminView', () => {
     })
     expect(wrapper.get('h1').text()).toBe('Rekvisitoversigt')
     expect(wrapper.find('#contacts-heading').exists()).toBe(false)
+    expect(wrapper.findAll('nav button').some((button) => button.text() === 'Lån')).toBe(false)
     expect(wrapper.findAll('button').some((button) => button.text() === 'Tilføj rekvisit')).toBe(true)
     expect(wrapper.text()).toContain('Træstol')
     await wrapper.findAll('button')
       .find((button) => button.text() === 'Tilføj rekvisit')
       ?.trigger('click')
     expect(routerPush).toHaveBeenCalledWith({ name: 'admin-prop-create' })
+  })
+
+  it('shows a clearly marked loans preview and filters the examples', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+
+    await vi.waitFor(() => expect(wrapper.find('#contacts-heading').exists()).toBe(true))
+    const loanTab = wrapper.findAll('nav button').find((button) => button.text() === 'Lån')
+    await loanTab?.trigger('click')
+
+    expect(loanTab?.attributes('aria-current')).toBe('page')
+    expect(wrapper.get('#loans-heading').text()).toBe('Lån og udlån')
+    expect(wrapper.text()).toContain('forhåndsvisning med eksempler')
+    expect(wrapper.findAll('tbody tr')).toHaveLength(5)
+    expect(wrapper.findAll('tbody button').every((button) => button.attributes('disabled') !== undefined)).toBe(true)
+    await wrapper.get('#loan-filter').setValue('Lån')
+    expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+    expect(wrapper.get('tbody').text()).toContain('Gammel læderkuffert')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('opens the loans preview through the admin tab query', async () => {
+    routeState.query.tab = 'loans'
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+
+    await vi.waitFor(() => expect(wrapper.find('#loans-heading').exists()).toBe(true))
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('redirects search users away from the props overview', async () => {
