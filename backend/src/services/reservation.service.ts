@@ -9,6 +9,7 @@ import {
   findReservationsForProp,
   lockPropForReservation,
 } from '../repositories/reservation.repository.ts'
+import { findOverlappingApprovedLoan } from '../repositories/loan.repository.ts'
 
 export class ReservationNotFoundError extends Error {}
 export class InvalidReservationInputError extends Error {}
@@ -112,6 +113,11 @@ export async function reservePropPeriod(
     )) {
       throw new ReservationConflictError(
         'Rekvisitten er allerede reserveret i den valgte periode.',
+      )
+    }
+    if (await findOverlappingApprovedLoan(propObjectId, startDate, endDate, session)) {
+      throw new ReservationConflictError(
+        'Rekvisitten er allerede udlånt i den valgte periode.',
       )
     }
     const reservation = await createReservation({

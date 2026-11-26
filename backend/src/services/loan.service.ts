@@ -1,9 +1,23 @@
 import { ObjectId, type WithId } from 'mongodb'
+import { withTransaction } from '../config/database.ts'
 import { LOAN_STATUSES, type AssociationLoan, type AssociationLoanDetail, type LoanDocument } from '../models/loan.model.ts'
-import { findLoanForAssociation, findLoanReferences, findLoansForAssociation } from '../repositories/loan.repository.ts'
+import { findLoanForAssociation, findLoanReferences, findLoansForAssociation, findOverlappingApprovedLoan } from '../repositories/loan.repository.ts'
+import { findOverlappingReservation, lockPropForLoan } from '../repositories/reservation.repository.ts'
 
 export class AssociationLoansError extends Error {}
 export class AssociationLoanNotFoundError extends Error {}
+export class InvalidLoanDecisionError extends Error {}
+export class LoanDecisionConflictError extends Error {}
+
+export type LoanDecision = 'Godkendt' | 'Afvist'
+
+export function validateLoanDecision(input: unknown): LoanDecision {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)
+    || !('status' in input) || (input.status !== 'Godkendt' && input.status !== 'Afvist')) {
+    throw new InvalidLoanDecisionError('Vælg en gyldig afgørelse for lånet.')
+  }
+  return input.status
+}
 
 function isValidLoan(loan: WithId<LoanDocument>): boolean {
   return loan._id instanceof ObjectId
@@ -87,4 +101,44 @@ export async function getAssociationLoan(associationId: string, loanId: string):
   const [detail] = await mapAssociationLoans([loan], id)
   if (!detail) throw new AssociationLoansError('Lånet kunne ikke indlæses.')
   return { ...detail, borrowerMessage: loan.borrowerMessage ?? null }
+}
+
+export async function decideAssociationLoan(
+  associationId: string,
+  loanId: string,
+  decision: LoanDecision,
+): Promise<void> {
+  const ownerId = parseAssociationId(associationId)
+  if (!/^[a-f\d]{24}$/i.test(loanId)) {
+    throw new AssociationLoanNotFoundError('Lånet blev ikke fundet.')
+  }
+  const id = new ObjectId(loanId)
+  await withTransaction(async (database, session) => {
+    const loans = database.collection<LoanDocument>('loan')
+    const loan = await loans.findOne({ _id: id, ownerAssociationId: ownerId }, { session })
+    if (!loan) throw new AssociationLoanNotFoundError('Lånet blev ikke fundet.')
+    if (!isValidLoan(loan)) throw new AssociationLoansError('Lånet indeholder ugyldige oplysninger.')
+    if (loan.status !== 'Afventer svar') {
+      throw new LoanDecisionConflictError('Lånet afventer ikke længere svar. Opdatér lånet for at se den aktuelle status.')
+    }
+    if (decision === 'Godkendt') {
+      if (!await lockPropForLoan(ownerId, loan.propId, session)) {
+        throw new LoanDecisionConflictError('Rekvisitten til lånet blev ikke fundet.')
+      }
+      const start = new Date(`${loan.startDate.toISOString().slice(0, 10)}T00:00:00.000Z`)
+      const end = new Date(`${loan.endDate.toISOString().slice(0, 10)}T00:00:00.000Z`)
+      if (await findOverlappingReservation(ownerId, loan.propId, start, end, session)
+        || await findOverlappingApprovedLoan(loan.propId, start, end, session)) {
+        throw new LoanDecisionConflictError('Rekvisitten er allerede reserveret eller udlånt i den valgte periode.')
+      }
+    }
+    const result = await loans.updateOne(
+      { _id: id, ownerAssociationId: ownerId, status: 'Afventer svar' },
+      { $set: { status: decision } },
+      { session },
+    )
+    if (result.matchedCount !== 1) {
+      throw new LoanDecisionConflictError('Lånet afventer ikke længere svar. Opdatér lånet for at se den aktuelle status.')
+    }
+  })
 }

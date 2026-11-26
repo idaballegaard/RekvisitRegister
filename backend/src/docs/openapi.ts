@@ -300,6 +300,44 @@ export const openApiDocument = {
           '500': { description: 'Lånet eller dets tilknyttede rekvisit og forening kunne ikke læses.' },
         },
       },
+      patch: {
+        summary: 'Godkend eller afvis en låneanmodning',
+        description: 'Kun ejerforeningens foreningsansvarlige kan behandle lån, der afventer svar. Godkendelse kræver en periode uden overlappende reservationer eller godkendte lån. Start- og slutdag er inkluderet.',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'loanId', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['status'],
+                properties: { status: { type: 'string', enum: ['Godkendt', 'Afvist'] } },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Afgørelsen er gemt.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['status'],
+                  properties: { status: { type: 'string', enum: ['Godkendt', 'Afvist'] } },
+                },
+              },
+            },
+          },
+          '400': { description: 'Ugyldig afgørelse.' },
+          '401': { description: 'Login mangler, er ugyldigt eller udløbet.' },
+          '403': { description: 'Brugeren er ikke foreningsansvarlig.' },
+          '404': { description: 'Lånet blev ikke fundet for ejerforeningen.' },
+          '409': { description: 'Lånet afventer ikke svar, rekvisitten mangler, eller perioden overlapper.' },
+          '500': { description: 'Lånet kunne ikke behandles.' },
+        },
+      },
     },
     '/associations/current/users': {
       get: {

@@ -1,4 +1,4 @@
-import type { ObjectId, WithId } from 'mongodb'
+import type { ClientSession, ObjectId, WithId } from 'mongodb'
 import { getDatabase } from '../config/database.ts'
 import type { AssociationDocument } from '../models/association.model.ts'
 import type { LoanDocument } from '../models/loan.model.ts'
@@ -19,6 +19,22 @@ export async function findLoanForAssociation(
     _id: loanId,
     $or: [{ ownerAssociationId: associationId }, { borrowerAssociationId: associationId }],
   })
+}
+
+export async function findOverlappingApprovedLoan(
+  propId: ObjectId,
+  startDate: Date,
+  endDate: Date,
+  session: ClientSession,
+): Promise<boolean> {
+  const endExclusive = new Date(endDate)
+  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1)
+  return Boolean(await getDatabase().collection<LoanDocument>('loan').findOne({
+    propId,
+    status: 'Godkendt',
+    startDate: { $lt: endExclusive },
+    endDate: { $gte: startDate },
+  }, { session, projection: { _id: 1 } }))
 }
 
 export async function findLoanReferences(propIds: ObjectId[], associationIds: ObjectId[]): Promise<{

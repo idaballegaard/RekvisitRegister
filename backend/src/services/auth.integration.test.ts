@@ -933,6 +933,95 @@ describe('auth endpoints with MongoDB', () => {
     await associations.deleteMany({ _id: { $in: [ownerId, borrowerId, outsiderId] } })
   })
 
+  test('decides pending loans safely across associations, reservations and concurrent requests', async () => {
+    const ownerId = new ObjectId()
+    const borrowerId = new ObjectId()
+    const outsiderId = new ObjectId()
+    const propId = new ObjectId()
+    const loans = getDatabase().collection<LoanDocument>('loan')
+    const props = getDatabase().collection<PropDocument>('prop')
+    const reservations = getDatabase().collection<ReservationDocument>('reservation')
+    const associations = getDatabase().collection<AssociationDocument>('associations')
+    const now = new Date()
+    await associations.insertMany([
+      { _id: ownerId, name: 'Owner', createdAt: now, updatedAt: now },
+      { _id: borrowerId, name: 'Borrower', createdAt: now, updatedAt: now },
+      { _id: outsiderId, name: 'Other', createdAt: now, updatedAt: now },
+    ])
+    await props.insertOne({
+      _id: propId, associationId: ownerId, storageLocationId: storageLocationIds[0],
+      name: 'Test prop', description: '', availability: true,
+      dimensions: { height: 1, width: 1, depth: 1, unit: 'cm' },
+      quantity: 1, colour: '', placement: '', tags: [], condition: '', historicalPeriod: '',
+    })
+    const token = (id: ObjectId, role: typeof ROLES.ASSOCIATION_ADMIN | typeof ROLES.PROP_MANAGER = ROLES.ASSOCIATION_ADMIN) => createAccessToken({
+      userId: expectedUserId, firstName: 'Test', lastName: 'User', userName: 'test',
+      role, associationId: id.toHexString(),
+    })
+    const ownerToken = await token(ownerId)
+    const borrowerToken = await token(borrowerId)
+    const outsiderToken = await token(outsiderId)
+    const managerToken = await token(ownerId, ROLES.PROP_MANAGER)
+    const makeLoan = async (start: string, end: string) => {
+      const id = new ObjectId()
+      await loans.insertOne({
+        _id: id, propId, ownerAssociationId: ownerId, borrowerAssociationId: borrowerId,
+        startDate: new Date(`${start}T00:00:00Z`), endDate: new Date(`${end}T00:00:00Z`),
+        status: 'Afventer svar',
+      })
+      return id
+    }
+    const decide = (id: ObjectId, status: string, accessToken = ownerToken) => fetch(
+      `${baseUrl}/associations/current/loans/${id.toHexString()}`,
+      { method: 'PATCH', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) },
+    )
+    const reserve = (startDate: string, endDate: string) => fetch(
+      `${baseUrl}/associations/current/props/${propId.toHexString()}/reservations`,
+      { method: 'POST', headers: { Authorization: 'Bearer ' + managerToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ startDate, endDate }) },
+    )
+    const first = await makeLoan('2026-12-01', '2026-12-03')
+    assert.equal((await decide(first, 'Godkendt', borrowerToken)).status, 404)
+    assert.equal((await decide(first, 'Godkendt', outsiderToken)).status, 404)
+    assert.equal((await decide(first, 'Godkendt', managerToken)).status, 403)
+    assert.equal((await fetch(`${baseUrl}/associations/current/loans/${first}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{"status":"Godkendt"}' })).status, 401)
+    assert.equal((await decide(first, 'Afleveret')).status, 400)
+    assert.equal((await decide(first, 'Godkendt')).status, 200)
+    assert.equal((await decide(first, 'Afvist')).status, 409)
+    const detail = await fetch(`${baseUrl}/associations/current/loans/${first}`, { headers: { Authorization: 'Bearer ' + borrowerToken } })
+    assert.equal((await detail.json() as { loan: { status: string } }).loan.status, 'Godkendt')
+    assert.equal((await reserve('2026-12-03', '2026-12-04')).status, 409)
+    const overlapping = await makeLoan('2026-12-03', '2026-12-04')
+    assert.equal((await decide(overlapping, 'Godkendt')).status, 409)
+    assert.equal((await decide(overlapping, 'Afvist')).status, 200)
+    assert.equal((await loans.findOne({ _id: overlapping }))?.status, 'Afvist')
+    assert.equal((await reserve('2026-12-04', '2026-12-05')).status, 201)
+    const reserved = await makeLoan('2026-12-05', '2026-12-06')
+    assert.equal((await decide(reserved, 'Godkendt')).status, 409)
+    assert.equal((await loans.findOne({ _id: reserved }))?.status, 'Afventer svar')
+    const adjacent = await makeLoan('2026-12-06', '2026-12-07')
+    assert.equal((await decide(adjacent, 'Godkendt')).status, 200)
+
+    const raceA = await makeLoan('2027-01-01', '2027-01-05')
+    const raceB = await makeLoan('2027-01-05', '2027-01-06')
+    const simultaneousLoans = await Promise.all([decide(raceA, 'Godkendt'), decide(raceB, 'Godkendt')])
+    assert.deepEqual(simultaneousLoans.map((response) => response.status).sort(), [200, 409])
+    const raceReservation = await makeLoan('2027-02-01', '2027-02-03')
+    const simultaneousReservation = await Promise.all([
+      decide(raceReservation, 'Godkendt'),
+      reserve('2027-02-03', '2027-02-04'),
+    ])
+    assert.deepEqual(simultaneousReservation.map((response) => response.status).sort(), [
+      simultaneousReservation[0]?.status === 200 ? 200 : 201, 409,
+    ])
+    const raceDecision = await makeLoan('2027-03-01', '2027-03-02')
+    const simultaneousDecisions = await Promise.all([decide(raceDecision, 'Godkendt'), decide(raceDecision, 'Afvist')])
+    assert.deepEqual(simultaneousDecisions.map((response) => response.status).sort(), [200, 409])
+    await loans.deleteMany({ propId })
+    await reservations.deleteMany({ propId })
+    await props.deleteOne({ _id: propId })
+    await associations.deleteMany({ _id: { $in: [ownerId, borrowerId, outsiderId] } })
+  })
+
   test('invites association users and activates their account with a one-time token', async () => {
     let invitationUrl = ''
     const user = await inviteAssociationUser(

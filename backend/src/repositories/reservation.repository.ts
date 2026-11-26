@@ -3,6 +3,19 @@ import { getDatabase } from '../config/database.ts'
 import type { PropDocument } from '../models/prop.model.ts'
 import type { ReservationDocument } from '../models/reservation.model.ts'
 
+export async function lockPropForLoan(
+  associationId: ObjectId,
+  propId: ObjectId,
+  session: ClientSession,
+): Promise<boolean> {
+  const result = await getDatabase().collection<PropDocument>('prop').updateOne(
+    { _id: propId, associationId },
+    { $inc: { reservationRevision: 1 } },
+    { session },
+  )
+  return result.matchedCount === 1
+}
+
 export async function lockPropForReservation(
   associationId: ObjectId,
   propId: ObjectId,
@@ -42,10 +55,12 @@ export async function findOverlappingReservation(
   endDate: Date,
   session: ClientSession,
 ): Promise<boolean> {
+  const endExclusive = new Date(endDate)
+  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1)
   return Boolean(await getDatabase().collection<ReservationDocument>('reservation').findOne({
     associationId,
     propId,
-    startDate: { $lte: endDate },
+    startDate: { $lt: endExclusive },
     endDate: { $gte: startDate },
   }, { session, projection: { _id: 1 } }))
 }

@@ -23,7 +23,7 @@ import {
   postCurrentAssociationUser,
   postCurrentAssociationUserInvitation,
 } from '../controllers/association-user.controller.ts'
-import { getCurrentAssociationLoan, getCurrentAssociationLoans } from '../controllers/loan.controller.ts'
+import { getCurrentAssociationLoan, getCurrentAssociationLoans, patchCurrentAssociationLoan } from '../controllers/loan.controller.ts'
 
 const associationRouter = Router()
 
@@ -39,6 +39,12 @@ associationRouter.get(
   requireAuthentication,
   requirePermission(PERMISSIONS.UPDATE_ASSOCIATION),
   getCurrentAssociationLoan,
+)
+associationRouter.patch(
+  '/associations/current/loans/:loanId',
+  requireAuthentication,
+  requirePermission(PERMISSIONS.UPDATE_ASSOCIATION),
+  patchCurrentAssociationLoan,
 )
 associationRouter.get(
   '/associations/current/users',

@@ -62,6 +62,8 @@ export interface AssociationLoanDetail extends AssociationLoan {
   borrowerMessage: string | null
 }
 
+export type LoanDecision = 'Godkendt' | 'Afvist'
+
 export interface AssociationUser {
   id: string
   firstName: string
@@ -195,16 +197,22 @@ function isAssociationLoan(value: unknown): value is AssociationLoan {
     && ['Afventer svar', 'Godkendt', 'Afvist', 'Afleveret', 'Annulleret'].includes(loan.status ?? '')
 }
 
-async function fetchAssociationLoans(path: string): Promise<unknown> {
+async function fetchAssociationLoans(path: string, decision?: LoanDecision): Promise<unknown> {
   const accessToken = sessionStorage.getItem('rekvisit-register.access-token')
   if (!accessToken) throw new UnauthorizedError('Du er ikke logget ind.')
   let response: Response
   try {
     response = await fetch(path, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      ...(decision ? { method: 'PATCH', body: JSON.stringify({ status: decision }) } : {}),
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        ...(decision ? { 'Content-Type': 'application/json' } : {}),
+      },
     })
   } catch {
-    throw new Error('Lån og udlån kunne ikke hentes. Kontrollér forbindelsen, og prøv igen.')
+    throw new Error(decision
+      ? 'Afgørelsen kunne ikke bekræftes. Kontrollér forbindelsen, og opdatér lånet for at se den aktuelle status.'
+      : 'Lån og udlån kunne ikke hentes. Kontrollér forbindelsen, og prøv igen.')
   }
   if (response.status === 401) {
     clearAuthSession()
@@ -214,12 +222,16 @@ async function fetchAssociationLoans(path: string): Promise<unknown> {
   try {
     body = await response.json()
   } catch {
-    throw new Error('Lån og udlån kunne ikke hentes. Prøv igen senere.')
+    throw new Error(decision
+      ? 'Afgørelsen kunne ikke bekræftes. Opdatér lånet for at se den aktuelle status.'
+      : 'Lån og udlån kunne ikke hentes. Prøv igen senere.')
   }
   if (!response.ok) {
     if (typeof body === 'object' && body !== null && 'error' in body
       && typeof body.error === 'string') throw new Error(body.error)
-    throw new Error(`Lån og udlån kunne ikke hentes (HTTP ${response.status}).`)
+    throw new Error(decision
+      ? `Lånet kunne ikke behandles (HTTP ${response.status}). Opdatér lånet for at se den aktuelle status.`
+      : `Lån og udlån kunne ikke hentes (HTTP ${response.status}).`)
   }
   return body
 }
@@ -241,7 +253,15 @@ export async function getCurrentAssociationLoan(loanId: string): Promise<Associa
     || body.loan.id.toLowerCase() !== loanId.toLowerCase()) {
     throw new Error('Lånet kunne ikke indlæses. Kontakt teknisk support.')
   }
+
   return { ...body.loan, borrowerMessage: body.loan.borrowerMessage }
+}
+
+export async function decideCurrentAssociationLoan(loanId: string, decision: LoanDecision): Promise<void> {
+  const body = await fetchAssociationLoans(`/api/associations/current/loans/${encodeURIComponent(loanId)}`, decision)
+  if (typeof body !== 'object' || body === null || !('status' in body) || body.status !== decision) {
+    throw new Error('Lånets status kunne ikke bekræftes. Opdatér lånet for at se den aktuelle status.')
+  }
 }
 
 function isAssociationUser(value: unknown): value is AssociationUser {

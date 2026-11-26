@@ -2,10 +2,12 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
+  decideCurrentAssociationLoan,
   getCurrentAssociationLoan,
   getCurrentAssociationLoans,
   type AssociationLoan,
   type AssociationLoanDetail,
+  type LoanDecision,
 } from '../services/association.service'
 import { UnauthorizedError } from '../services/auth.service'
 
@@ -20,6 +22,9 @@ const selectedLoanId = ref<string | null>(null)
 const selectedLoan = ref<AssociationLoanDetail | null>(null)
 const isLoadingDetail = ref(false)
 const detailError = ref('')
+const decisionError = ref('')
+const decisionSuccess = ref('')
+const isDeciding = ref(false)
 let detailRequest = 0
 const visibleLoans = computed(() => loans.value.filter((loan) => (
   loan.type === (selectedType.value === 'Lån' ? 'loan' : 'lending')
@@ -45,11 +50,16 @@ async function openLoan(loanId: string): Promise<void> {
   selectedLoanId.value = loanId
   selectedLoan.value = null
   detailError.value = ''
+  decisionError.value = ''
+  decisionSuccess.value = ''
   isLoadingDetail.value = true
   const requestId = ++detailRequest
   try {
     const loan = await getCurrentAssociationLoan(loanId)
-    if (requestId === detailRequest) selectedLoan.value = loan
+    if (requestId === detailRequest) {
+      selectedLoan.value = loan
+      loans.value = loans.value.map((entry) => entry.id === loan.id ? { ...entry, status: loan.status } : entry)
+    }
   } catch (error) {
     if (requestId !== detailRequest) return
     if (error instanceof UnauthorizedError) {
@@ -68,6 +78,28 @@ function backToLoans(): void {
   selectedLoan.value = null
 }
 
+async function decideLoan(decision: LoanDecision): Promise<void> {
+  const loan = selectedLoan.value
+  if (!loan || isDeciding.value) return
+  isDeciding.value = true
+  decisionError.value = ''
+  decisionSuccess.value = ''
+  try {
+    await decideCurrentAssociationLoan(loan.id, decision)
+    loan.status = decision
+    loans.value = loans.value.map((entry) => entry.id === loan.id ? { ...entry, status: decision } : entry)
+    decisionSuccess.value = decision === 'Godkendt' ? 'Lånet er godkendt.' : 'Lånet er afvist.'
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      await router.replace({ name: 'login' })
+      return
+    }
+    decisionError.value = error instanceof Error ? error.message : 'Lånet kunne ikke behandles.'
+  } finally {
+    isDeciding.value = false
+  }
+}
+
 function formatDate(date: string): string {
   return new Intl.DateTimeFormat('da-DK', {
     day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC',
@@ -80,7 +112,7 @@ onMounted(loadLoans)
 <template>
   <section class="py-10" aria-labelledby="loans-heading">
     <template v-if="selectedLoanId">
-      <button type="button" class="mb-8 text-base font-semibold text-brand hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand" @click="backToLoans">
+      <button type="button" :disabled="isDeciding" class="mb-8 text-base font-semibold text-brand hover:underline disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand" @click="backToLoans">
         ← Tilbage til {{ selectedType.toLowerCase() }}
       </button>
       <h2 id="loans-heading" class="text-xl font-bold text-brand">Lånedetaljer</h2>
@@ -110,6 +142,17 @@ onMounted(loadLoans)
             <dd class="whitespace-pre-wrap break-words sm:col-span-2">{{ selectedLoan.borrowerMessage?.trim() ? selectedLoan.borrowerMessage : 'Ingen besked' }}</dd>
           </div>
         </dl>
+        <p v-if="decisionSuccess" class="mt-5 text-base" role="status">{{ decisionSuccess }}</p>
+        <div v-if="decisionError" class="mt-5 text-brand" role="alert">
+          <p>{{ decisionError }}</p>
+          <button type="button" class="mt-2 underline" @click="openLoan(selectedLoan.id)">Opdatér lånet</button>
+        </div>
+        <div v-if="selectedLoan.type === 'lending' && selectedLoan.status === 'Afventer svar'" class="mt-6 flex flex-wrap gap-3">
+          <button type="button" :disabled="isDeciding" class="rounded bg-brand px-5 py-2.5 font-semibold text-white hover:bg-[#7d0202] disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand" @click="decideLoan('Godkendt')">
+            {{ isDeciding ? 'Behandler…' : 'Godkend' }}
+          </button>
+          <button type="button" :disabled="isDeciding" class="rounded border border-brand px-5 py-2.5 font-semibold text-brand hover:bg-[#f5eded] disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand" @click="decideLoan('Afvist')">Afvis</button>
+        </div>
       </div>
     </template>
     <template v-else>
