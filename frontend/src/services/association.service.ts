@@ -58,6 +58,10 @@ export interface AssociationLoan {
   status: 'Afventer svar' | 'Godkendt' | 'Afvist' | 'Afleveret' | 'Annulleret'
 }
 
+export interface AssociationLoanDetail extends AssociationLoan {
+  borrowerMessage: string | null
+}
+
 export interface AssociationUser {
   id: string
   firstName: string
@@ -191,12 +195,12 @@ function isAssociationLoan(value: unknown): value is AssociationLoan {
     && ['Afventer svar', 'Godkendt', 'Afvist', 'Afleveret', 'Annulleret'].includes(loan.status ?? '')
 }
 
-export async function getCurrentAssociationLoans(): Promise<AssociationLoan[]> {
+async function fetchAssociationLoans(path: string): Promise<unknown> {
   const accessToken = sessionStorage.getItem('rekvisit-register.access-token')
   if (!accessToken) throw new UnauthorizedError('Du er ikke logget ind.')
   let response: Response
   try {
-    response = await fetch('/api/associations/current/loans', {
+    response = await fetch(path, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
   } catch {
@@ -217,11 +221,27 @@ export async function getCurrentAssociationLoans(): Promise<AssociationLoan[]> {
       && typeof body.error === 'string') throw new Error(body.error)
     throw new Error(`Lån og udlån kunne ikke hentes (HTTP ${response.status}).`)
   }
+  return body
+}
+
+export async function getCurrentAssociationLoans(): Promise<AssociationLoan[]> {
+  const body = await fetchAssociationLoans('/api/associations/current/loans')
   if (typeof body !== 'object' || body === null || !('loans' in body)
     || !Array.isArray(body.loans) || !body.loans.every(isAssociationLoan)) {
     throw new Error('Lån og udlån kunne ikke indlæses. Kontakt teknisk support.')
   }
   return body.loans
+}
+
+export async function getCurrentAssociationLoan(loanId: string): Promise<AssociationLoanDetail> {
+  const body = await fetchAssociationLoans(`/api/associations/current/loans/${encodeURIComponent(loanId)}`)
+  if (typeof body !== 'object' || body === null || !('loan' in body)
+    || !isAssociationLoan(body.loan) || !('borrowerMessage' in body.loan)
+    || (body.loan.borrowerMessage !== null && typeof body.loan.borrowerMessage !== 'string')
+    || body.loan.id.toLowerCase() !== loanId.toLowerCase()) {
+    throw new Error('Lånet kunne ikke indlæses. Kontakt teknisk support.')
+  }
+  return { ...body.loan, borrowerMessage: body.loan.borrowerMessage }
 }
 
 function isAssociationUser(value: unknown): value is AssociationUser {

@@ -1,8 +1,9 @@
 import { ObjectId, type WithId } from 'mongodb'
-import { LOAN_STATUSES, type AssociationLoan, type LoanDocument } from '../models/loan.model.ts'
-import { findLoanReferences, findLoansForAssociation } from '../repositories/loan.repository.ts'
+import { LOAN_STATUSES, type AssociationLoan, type AssociationLoanDetail, type LoanDocument } from '../models/loan.model.ts'
+import { findLoanForAssociation, findLoanReferences, findLoansForAssociation } from '../repositories/loan.repository.ts'
 
 export class AssociationLoansError extends Error {}
+export class AssociationLoanNotFoundError extends Error {}
 
 function isValidLoan(loan: WithId<LoanDocument>): boolean {
   return loan._id instanceof ObjectId
@@ -18,12 +19,17 @@ function isValidLoan(loan: WithId<LoanDocument>): boolean {
     && LOAN_STATUSES.includes(loan.status)
 }
 
-export async function getAssociationLoans(associationId: string): Promise<AssociationLoan[]> {
+function parseAssociationId(associationId: string): ObjectId {
   if (!/^[a-f\d]{24}$/i.test(associationId)) {
     throw new AssociationLoansError('Forenings-id’et er ugyldigt.')
   }
-  const id = new ObjectId(associationId)
-  const loans = await findLoansForAssociation(id)
+  return new ObjectId(associationId)
+}
+
+async function mapAssociationLoans(
+  loans: WithId<LoanDocument>[],
+  id: ObjectId,
+): Promise<AssociationLoan[]> {
   if (!loans.every(isValidLoan)) {
     throw new AssociationLoansError('Et eller flere lån indeholder ugyldige oplysninger.')
   }
@@ -61,4 +67,24 @@ export async function getAssociationLoans(associationId: string): Promise<Associ
       status: loan.status,
     }
   })
+}
+
+export async function getAssociationLoans(associationId: string): Promise<AssociationLoan[]> {
+  const id = parseAssociationId(associationId)
+  return mapAssociationLoans(await findLoansForAssociation(id), id)
+}
+
+export async function getAssociationLoan(associationId: string, loanId: string): Promise<AssociationLoanDetail> {
+  const id = parseAssociationId(associationId)
+  if (!/^[a-f\d]{24}$/i.test(loanId)) {
+    throw new AssociationLoanNotFoundError('Lånet blev ikke fundet.')
+  }
+  const loan = await findLoanForAssociation(new ObjectId(loanId), id)
+  if (!loan) throw new AssociationLoanNotFoundError('Lånet blev ikke fundet.')
+  if (loan.borrowerMessage !== undefined && typeof loan.borrowerMessage !== 'string') {
+    throw new AssociationLoansError('Lånets besked indeholder ugyldige oplysninger.')
+  }
+  const [detail] = await mapAssociationLoans([loan], id)
+  if (!detail) throw new AssociationLoansError('Lånet kunne ikke indlæses.')
+  return { ...detail, borrowerMessage: loan.borrowerMessage ?? null }
 }

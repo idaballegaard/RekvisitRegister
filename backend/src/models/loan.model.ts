@@ -29,3 +29,7 @@ export interface AssociationLoan {
   endDate: string
   status: LoanStatus
 }
+
+export interface AssociationLoanDetail extends AssociationLoan {
+  borrowerMessage: string | null
+}

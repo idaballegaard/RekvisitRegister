@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { getCurrentAssociationLoans, type AssociationLoan } from '../services/association.service'
+import {
+  getCurrentAssociationLoan,
+  getCurrentAssociationLoans,
+  type AssociationLoan,
+  type AssociationLoanDetail,
+} from '../services/association.service'
 import { UnauthorizedError } from '../services/auth.service'
 
 type LoanType = 'Lån' | 'Udlån'
@@ -11,6 +16,11 @@ const loans = ref<AssociationLoan[]>([])
 const isLoading = ref(true)
 const errorMessage = ref('')
 const selectedType = ref<LoanType>('Lån')
+const selectedLoanId = ref<string | null>(null)
+const selectedLoan = ref<AssociationLoanDetail | null>(null)
+const isLoadingDetail = ref(false)
+const detailError = ref('')
+let detailRequest = 0
 const visibleLoans = computed(() => loans.value.filter((loan) => (
   loan.type === (selectedType.value === 'Lån' ? 'loan' : 'lending')
 )))
@@ -31,6 +41,33 @@ async function loadLoans(): Promise<void> {
   }
 }
 
+async function openLoan(loanId: string): Promise<void> {
+  selectedLoanId.value = loanId
+  selectedLoan.value = null
+  detailError.value = ''
+  isLoadingDetail.value = true
+  const requestId = ++detailRequest
+  try {
+    const loan = await getCurrentAssociationLoan(loanId)
+    if (requestId === detailRequest) selectedLoan.value = loan
+  } catch (error) {
+    if (requestId !== detailRequest) return
+    if (error instanceof UnauthorizedError) {
+      await router.replace({ name: 'login' })
+      return
+    }
+    detailError.value = error instanceof Error ? error.message : 'Lånet kunne ikke hentes.'
+  } finally {
+    if (requestId === detailRequest) isLoadingDetail.value = false
+  }
+}
+
+function backToLoans(): void {
+  detailRequest++
+  selectedLoanId.value = null
+  selectedLoan.value = null
+}
+
 function formatDate(date: string): string {
   return new Intl.DateTimeFormat('da-DK', {
     day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC',
@@ -42,6 +79,40 @@ onMounted(loadLoans)
 
 <template>
   <section class="py-10" aria-labelledby="loans-heading">
+    <template v-if="selectedLoanId">
+      <button type="button" class="mb-8 text-base font-semibold text-brand hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand" @click="backToLoans">
+        ← Tilbage til {{ selectedType.toLowerCase() }}
+      </button>
+      <h2 id="loans-heading" class="text-xl font-bold text-brand">Lånedetaljer</h2>
+      <p v-if="isLoadingDetail" class="py-6 text-base text-gray-medium" role="status">Henter lånet…</p>
+      <div v-else-if="detailError" class="py-6" role="alert">
+        <p class="text-base text-brand">{{ detailError }}</p>
+        <button type="button" class="mt-3 text-brand underline" @click="openLoan(selectedLoanId)">Prøv igen</button>
+      </div>
+      <div v-else-if="selectedLoan" class="mt-6 max-w-3xl">
+        <h3 class="text-2xl font-bold">{{ selectedLoan.propName }}</h3>
+        <p class="mt-2 text-base text-gray-medium">{{ selectedLoan.type === 'loan' ? 'Lån' : 'Udlån' }}</p>
+        <dl class="mt-6 border-t border-[#e2e0e0]">
+          <div class="grid gap-1 border-b border-[#e2e0e0] py-4 sm:grid-cols-3">
+            <dt class="text-gray-medium">Status</dt>
+            <dd class="font-semibold sm:col-span-2">{{ selectedLoan.status }}</dd>
+          </div>
+          <div class="grid gap-1 border-b border-[#e2e0e0] py-4 sm:grid-cols-3">
+            <dt class="text-gray-medium">{{ selectedLoan.type === 'loan' ? 'Ejerforening' : 'Lånerforening' }}</dt>
+            <dd class="sm:col-span-2">{{ selectedLoan.associationName }}</dd>
+          </div>
+          <div class="grid gap-1 border-b border-[#e2e0e0] py-4 sm:grid-cols-3">
+            <dt class="text-gray-medium">Periode</dt>
+            <dd class="sm:col-span-2">{{ formatDate(selectedLoan.startDate) }} – {{ formatDate(selectedLoan.endDate) }}</dd>
+          </div>
+          <div class="grid gap-1 border-b border-[#e2e0e0] py-4 sm:grid-cols-3">
+            <dt class="text-gray-medium">Besked fra låner</dt>
+            <dd class="whitespace-pre-wrap break-words sm:col-span-2">{{ selectedLoan.borrowerMessage?.trim() ? selectedLoan.borrowerMessage : 'Ingen besked' }}</dd>
+          </div>
+        </dl>
+      </div>
+    </template>
+    <template v-else>
     <div class="mb-6">
       <div>
         <h2 id="loans-heading" class="text-xl font-bold text-brand">Lån og udlån</h2>
@@ -112,10 +183,9 @@ onMounted(loadLoans)
             <td class="px-3 py-4">
               <button
                 type="button"
-                disabled
-                title="Detaljer om lån er ikke tilgængelige endnu"
-                :aria-label="`Se lån for ${loan.propName} (ikke tilgængeligt endnu)`"
-                class="cursor-not-allowed text-brand underline underline-offset-2"
+                :aria-label="`Se lån for ${loan.propName}`"
+                class="cursor-pointer text-brand underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                @click="openLoan(loan.id)"
               >
                 Se lån
               </button>
@@ -124,5 +194,6 @@ onMounted(loadLoans)
         </tbody>
       </table>
     </div>
+    </template>
   </section>
 </template>

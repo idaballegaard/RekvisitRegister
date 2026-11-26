@@ -260,6 +260,47 @@ export const openApiDocument = {
         },
       },
     },
+    '/associations/current/loans/{loanId}': {
+      get: {
+        summary: 'Hent detaljer om et lån for den indloggede brugers forening',
+        description: 'Kun for foreningsansvarlige i ejer- eller lånerforeningen.',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'loanId', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          '200': {
+            description: 'Lånets detaljer inklusiv lånerens eventuelle besked.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['loan'],
+                  properties: {
+                    loan: {
+                      type: 'object',
+                      required: ['id', 'type', 'propName', 'associationName', 'startDate', 'endDate', 'status', 'borrowerMessage'],
+                      properties: {
+                        id: { type: 'string' },
+                        type: { type: 'string', enum: ['loan', 'lending'] },
+                        propName: { type: 'string' },
+                        associationName: { type: 'string', description: 'Modpartens foreningsnavn.' },
+                        startDate: { type: 'string', format: 'date' },
+                        endDate: { type: 'string', format: 'date' },
+                        status: { type: 'string', enum: ['Afventer svar', 'Godkendt', 'Afvist', 'Afleveret', 'Annulleret'] },
+                        borrowerMessage: { type: 'string', nullable: true },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          '401': { description: 'Login mangler, er ugyldigt eller udløbet.' },
+          '403': { description: 'Brugeren er ikke foreningsansvarlig.' },
+          '404': { description: 'Lånet blev ikke fundet for den aktuelle forening.' },
+          '500': { description: 'Lånet eller dets tilknyttede rekvisit og forening kunne ikke læses.' },
+        },
+      },
+    },
     '/associations/current/users': {
       get: {
         summary: 'Hent brugere i den indloggede brugers forening',

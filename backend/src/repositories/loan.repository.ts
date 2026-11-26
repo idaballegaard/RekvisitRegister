@@ -11,6 +11,16 @@ export async function findLoansForAssociation(associationId: ObjectId): Promise<
     .toArray()
 }
 
+export async function findLoanForAssociation(
+  loanId: ObjectId,
+  associationId: ObjectId,
+): Promise<WithId<LoanDocument> | null> {
+  return getDatabase().collection<LoanDocument>('loan').findOne({
+    _id: loanId,
+    $or: [{ ownerAssociationId: associationId }, { borrowerAssociationId: associationId }],
+  })
+}
+
 export async function findLoanReferences(propIds: ObjectId[], associationIds: ObjectId[]): Promise<{
   props: WithId<Pick<PropDocument, 'name' | 'associationId'>>[]
   associations: WithId<Pick<AssociationDocument, 'name'>>[]

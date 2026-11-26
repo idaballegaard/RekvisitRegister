@@ -882,6 +882,35 @@ describe('auth endpoints with MongoDB', () => {
     assert.equal((await fetchLoans(await makeToken(ownerId, ROLES.PROP_MANAGER))).status, 403)
     assert.equal((await fetchLoans(await makeToken(ownerId, ROLES.SEARCH_USER))).status, 403)
     const ownerToken = await makeToken(ownerId, ROLES.ASSOCIATION_ADMIN)
+    const fetchDetail = (token: string, id = loanId.toHexString()) => fetch(
+      `${baseUrl}/associations/current/loans/${id}`,
+      { headers: { Authorization: 'Bearer ' + token } },
+    )
+    const ownerDetail = await fetchDetail(ownerToken)
+    assert.equal(ownerDetail.status, 200)
+    assert.deepEqual(await ownerDetail.json(), { loan: {
+      id: loanId.toHexString(), type: 'lending', propName: 'Lånestol',
+      associationName: 'Borrower theatre', startDate: '2026-12-01', endDate: '2026-12-10',
+      status: 'Afventer svar', borrowerMessage: 'Private message',
+    } })
+    const borrowerDetail = await fetchDetail(await makeToken(borrowerId, ROLES.ASSOCIATION_ADMIN))
+    assert.equal(borrowerDetail.status, 200)
+    assert.deepEqual(await borrowerDetail.json(), { loan: {
+      id: loanId.toHexString(), type: 'loan', propName: 'Lånestol',
+      associationName: 'Owner theatre', startDate: '2026-12-01', endDate: '2026-12-10',
+      status: 'Afventer svar', borrowerMessage: 'Private message',
+    } })
+    assert.equal((await fetchDetail(await makeToken(outsiderId, ROLES.ASSOCIATION_ADMIN))).status, 404)
+    assert.equal((await fetchDetail(ownerToken, new ObjectId().toHexString())).status, 404)
+    assert.equal((await fetchDetail(ownerToken, 'invalid')).status, 404)
+    assert.equal((await fetch(`${baseUrl}/associations/current/loans/${loanId.toHexString()}`)).status, 401)
+    assert.equal((await fetchDetail(await makeToken(ownerId, ROLES.PROP_MANAGER))).status, 403)
+    await loans.updateOne({ _id: loanId }, { $unset: { borrowerMessage: '' } })
+    const noMessage = await (await fetchDetail(ownerToken)).json() as { loan: { borrowerMessage: string | null } }
+    assert.equal(noMessage.loan.borrowerMessage, null)
+    await getDatabase().collection('loan').updateOne({ _id: loanId }, { $set: { borrowerMessage: 123 } })
+    assert.equal((await fetchDetail(ownerToken)).status, 500)
+    await loans.updateOne({ _id: loanId }, { $set: { borrowerMessage: 'Private message' } })
     for (const status of LOAN_STATUSES) {
       await loans.updateOne({ _id: loanId }, { $set: { status } })
       const response = await fetchLoans(ownerToken)
@@ -899,6 +928,7 @@ describe('auth endpoints with MongoDB', () => {
     await rawLoans.updateOne({ _id: loanId }, { $set: { borrowerAssociationId: borrowerId } })
     await props.deleteOne({ _id: propId })
     assert.equal((await fetchLoans(ownerToken)).status, 500)
+    assert.equal((await fetchDetail(ownerToken)).status, 500)
     await loans.deleteOne({ _id: loanId })
     await associations.deleteMany({ _id: { $in: [ownerId, borrowerId, outsiderId] } })
   })
