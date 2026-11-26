@@ -23,10 +23,17 @@ import {
   postCurrentAssociationUser,
   postCurrentAssociationUserInvitation,
 } from '../controllers/association-user.controller.ts'
+import { getCurrentAssociationLoans } from '../controllers/loan.controller.ts'
 
 const associationRouter = Router()
 
 associationRouter.get('/associations/current', requireAuthentication, getCurrentAssociation)
+associationRouter.get(
+  '/associations/current/loans',
+  requireAuthentication,
+  requirePermission(PERMISSIONS.UPDATE_ASSOCIATION),
+  getCurrentAssociationLoans,
+)
 associationRouter.get(
   '/associations/current/users',
   requireAuthentication,

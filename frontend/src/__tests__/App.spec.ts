@@ -1408,11 +1408,15 @@ describe('AdminView', () => {
     expect(routerPush).toHaveBeenCalledWith({ name: 'admin-prop-create' })
   })
 
-  it('shows a clearly marked loans preview and filters the examples', async () => {
+  it('shows actual loans and lending in separate tabs', async () => {
     sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ loans: [
+        { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', type: 'loan', propName: 'Lånt kuffert', associationName: 'Ejerforeningen', startDate: '2026-11-12', endDate: '2026-11-19', status: 'Godkendt' },
+        { id: 'bbbbbbbbbbbbbbbbbbbbbbbb', type: 'lending', propName: 'Udlånt radio', associationName: 'Lånerforeningen', startDate: '2026-12-01', endDate: '2026-12-08', status: 'Afventer svar' },
+      ] }), { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mount(AdminView)
 
@@ -1422,26 +1426,86 @@ describe('AdminView', () => {
 
     expect(loanTab?.attributes('aria-current')).toBe('page')
     expect(wrapper.get('#loans-heading').text()).toBe('Lån og udlån')
-    expect(wrapper.text()).toContain('forhåndsvisning med eksempler')
-    expect(wrapper.findAll('tbody tr')).toHaveLength(5)
-    expect(wrapper.findAll('tbody button').every((button) => button.attributes('disabled') !== undefined)).toBe(true)
-    await wrapper.get('#loan-filter').setValue('Lån')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Lånt kuffert'))
+    expect(wrapper.text()).not.toContain('forhåndsvisning')
+    const subnav = wrapper.get('nav[aria-label="Oversigt over lån og udlån"]')
+    const loanButton = subnav.findAll('button').find((button) => button.text() === 'Lån')
+    const lendingButton = subnav.findAll('button').find((button) => button.text() === 'Udlån')
+    expect(loanButton?.attributes('aria-pressed')).toBe('true')
     expect(wrapper.findAll('tbody tr')).toHaveLength(1)
-    expect(wrapper.get('tbody').text()).toContain('Gammel læderkuffert')
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('tbody').text()).toContain('Ejerforeningen')
+    expect(wrapper.get('tbody').text()).toContain('12. nov. 2026')
+    expect(wrapper.get('tbody').text()).toContain('Godkendt')
+    expect(wrapper.findAll('tbody button').every((button) => button.attributes('disabled') !== undefined)).toBe(true)
+    await lendingButton?.trigger('click')
+    expect(lendingButton?.attributes('aria-pressed')).toBe('true')
+    expect(loanButton?.attributes('aria-pressed')).toBe('false')
+    expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+    expect(wrapper.get('tbody').text()).toContain('Udlånt radio')
+    expect(wrapper.get('tbody').text()).toContain('Lånerforeningen')
+    expect(wrapper.get('tbody').text()).not.toContain('Lånt kuffert')
+    await loanButton?.trigger('click')
+    expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+    expect(wrapper.get('tbody').text()).toContain('Lånt kuffert')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/associations/current/loans', {
+      headers: { Authorization: 'Bearer current-test-token' },
+    })
   })
 
-  it('opens the loans preview through the admin tab query', async () => {
+  it('opens the loans overview through the admin tab query and shows empty states', async () => {
     routeState.query.tab = 'loans'
     sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ loans: [] }), { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mount(AdminView)
 
     await vi.waitFor(() => expect(wrapper.find('#loans-heading').exists()).toBe(true))
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Foreningen har ingen lån.'))
+    await wrapper.get('nav[aria-label="Oversigt over lån og udlån"]').findAll('button')[1]?.trigger('click')
+    expect(wrapper.text()).toContain('Foreningen har ingen udlån.')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('shows loan errors and retries without showing examples', async () => {
+    routeState.query.tab = 'loans'
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'En rekvisit kunne ikke findes.' }), { status: 500 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ loans: [] }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+
+    await vi.waitFor(() => expect(wrapper.get('[role="alert"]').text()).toContain('En rekvisit kunne ikke findes.'))
+    expect(wrapper.text()).not.toContain('Gammel læderkuffert')
+    await wrapper.findAll('button').find((button) => button.text() === 'Prøv igen')?.trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Foreningen har ingen lån.'))
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+  })
+
+  it('rejects malformed loan responses and redirects when the session expires', async () => {
+    routeState.query.tab = 'loans'
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ loans: [{
+        id: 'aaaaaaaaaaaaaaaaaaaaaaaa', type: 'loan', propName: 'Kuffert',
+        associationName: 'Forening', startDate: '2026-02-30', endDate: '2026-03-01', status: 'Godkendt',
+      }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+
+    await vi.waitFor(() => expect(wrapper.get('[role="alert"]').text()).toContain('kunne ikke indlæses'))
+    await wrapper.findAll('button').find((button) => button.text() === 'Prøv igen')?.trigger('click')
+    await vi.waitFor(() => expect(routerReplace).toHaveBeenCalledWith({ name: 'login' }))
+    expect(sessionStorage.getItem('rekvisit-register.access-token')).toBeNull()
   })
 
   it('redirects search users away from the props overview', async () => {

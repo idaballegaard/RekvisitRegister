@@ -219,6 +219,47 @@ export const openApiDocument = {
         },
       },
     },
+    '/associations/current/loans': {
+      get: {
+        summary: 'Hent lån og udlån for den indloggede brugers forening',
+        description: 'Kun for foreningsansvarlige. Retningen og modparten beregnes ud fra den indloggede forening.',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Foreningens lån og udlån.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['loans'],
+                  properties: {
+                    loans: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        required: ['id', 'type', 'propName', 'associationName', 'startDate', 'endDate', 'status'],
+                        properties: {
+                          id: { type: 'string', description: 'Lånets MongoDB-id.' },
+                          type: { type: 'string', enum: ['loan', 'lending'], description: 'loan er lån, lending er udlån.' },
+                          propName: { type: 'string' },
+                          associationName: { type: 'string', description: 'Modpartens foreningsnavn.' },
+                          startDate: { type: 'string', format: 'date' },
+                          endDate: { type: 'string', format: 'date' },
+                          status: { type: 'string', enum: ['Afventer svar', 'Godkendt', 'Afvist', 'Afleveret', 'Annulleret'] },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          '401': { description: 'Login mangler, er ugyldigt eller udløbet.' },
+          '403': { description: 'Brugeren er ikke foreningsansvarlig.' },
+          '500': { description: 'Lånene eller deres tilknyttede rekvisitter og foreninger kunne ikke læses.' },
+        },
+      },
+    },
     '/associations/current/users': {
       get: {
         summary: 'Hent brugere i den indloggede brugers forening',

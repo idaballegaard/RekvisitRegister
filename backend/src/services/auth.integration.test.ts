@@ -12,6 +12,7 @@ import test, { after, before, describe } from 'node:test'
 import { closeDatabase, connectToDatabase, getDatabase } from '../config/database.ts'
 import type { PropDocument } from '../models/prop.model.ts'
 import type { ReservationDocument } from '../models/reservation.model.ts'
+import { LOAN_STATUSES, type LoanDocument } from '../models/loan.model.ts'
 import type { StorageLocationDocument } from '../models/storage-location.model.ts'
 import { ROLES, type UserDocument } from '../models/user.model.ts'
 import type { AssociationDocument } from '../models/association.model.ts'
@@ -826,6 +827,80 @@ describe('auth endpoints with MongoDB', () => {
     )
     assert.equal(propDelete.status, 200)
     assert.equal(await reservationCollection.countDocuments({ propId }), 0)
+  })
+
+  test('lists loans only for the owner and borrower from their respective perspectives', async () => {
+    const ownerId = new ObjectId()
+    const borrowerId = new ObjectId()
+    const outsiderId = new ObjectId()
+    const propId = new ObjectId()
+    const loanId = new ObjectId()
+    const now = new Date()
+    const associations = getDatabase().collection<AssociationDocument>('associations')
+    const props = getDatabase().collection<PropDocument>('prop')
+    const loans = getDatabase().collection<LoanDocument>('loan')
+    await associations.insertMany([
+      { _id: ownerId, name: 'Owner theatre', createdAt: now, updatedAt: now },
+      { _id: borrowerId, name: 'Borrower theatre', createdAt: now, updatedAt: now },
+      { _id: outsiderId, name: 'Other theatre', createdAt: now, updatedAt: now },
+    ])
+    await props.insertOne({
+      _id: propId, associationId: ownerId, storageLocationId: storageLocationIds[0],
+      name: 'Lånestol', description: '', availability: true,
+      dimensions: { height: 1, width: 1, depth: 1, unit: 'cm' },
+      quantity: 1, colour: '', placement: '', tags: [], condition: '', historicalPeriod: '',
+    })
+    await loans.insertOne({
+      _id: loanId, propId, ownerAssociationId: ownerId, borrowerAssociationId: borrowerId,
+      startDate: new Date('2026-12-01T00:00:00Z'),
+      endDate: new Date('2026-12-10T00:00:00Z'),
+      status: 'Afventer svar', borrowerMessage: 'Private message',
+    })
+    const makeToken = (associationId: ObjectId, role: typeof ROLES.ASSOCIATION_ADMIN | typeof ROLES.PROP_MANAGER | typeof ROLES.SEARCH_USER) => createAccessToken({
+      userId: expectedUserId, firstName: 'Test', lastName: 'User', userName: 'test.user',
+      role, associationId: associationId.toHexString(),
+    })
+    const fetchLoans = (token: string) => fetch(`${baseUrl}/associations/current/loans`, {
+      headers: { Authorization: 'Bearer ' + token },
+    })
+    const ownerResponse = await fetchLoans(await makeToken(ownerId, ROLES.ASSOCIATION_ADMIN))
+    assert.equal(ownerResponse.status, 200)
+    assert.deepEqual(await ownerResponse.json(), { loans: [{
+      id: loanId.toHexString(), type: 'lending', propName: 'Lånestol',
+      associationName: 'Borrower theatre', startDate: '2026-12-01', endDate: '2026-12-10',
+      status: 'Afventer svar',
+    }] })
+    const borrowerResponse = await fetchLoans(await makeToken(borrowerId, ROLES.ASSOCIATION_ADMIN))
+    assert.equal(borrowerResponse.status, 200)
+    assert.deepEqual(await borrowerResponse.json(), { loans: [{
+      id: loanId.toHexString(), type: 'loan', propName: 'Lånestol',
+      associationName: 'Owner theatre', startDate: '2026-12-01', endDate: '2026-12-10',
+      status: 'Afventer svar',
+    }] })
+    assert.deepEqual(await (await fetchLoans(await makeToken(outsiderId, ROLES.ASSOCIATION_ADMIN))).json(), { loans: [] })
+    assert.equal((await fetch(`${baseUrl}/associations/current/loans`)).status, 401)
+    assert.equal((await fetchLoans(await makeToken(ownerId, ROLES.PROP_MANAGER))).status, 403)
+    assert.equal((await fetchLoans(await makeToken(ownerId, ROLES.SEARCH_USER))).status, 403)
+    const ownerToken = await makeToken(ownerId, ROLES.ASSOCIATION_ADMIN)
+    for (const status of LOAN_STATUSES) {
+      await loans.updateOne({ _id: loanId }, { $set: { status } })
+      const response = await fetchLoans(ownerToken)
+      assert.equal(response.status, 200)
+      const body = await response.json() as { loans: { status: string }[] }
+      assert.equal(body.loans[0]?.status, status)
+    }
+    const rawLoans = getDatabase().collection('loan')
+    await rawLoans.updateOne({ _id: loanId }, { $set: { status: 'Udlånt' } })
+    assert.equal((await fetchLoans(ownerToken)).status, 500)
+    await rawLoans.updateOne({ _id: loanId }, { $set: { status: 'Godkendt', endDate: 'invalid' } })
+    assert.equal((await fetchLoans(ownerToken)).status, 500)
+    await rawLoans.updateOne({ _id: loanId }, { $set: { endDate: new Date('2026-12-10T00:00:00Z'), borrowerAssociationId: new ObjectId() } })
+    assert.equal((await fetchLoans(ownerToken)).status, 500)
+    await rawLoans.updateOne({ _id: loanId }, { $set: { borrowerAssociationId: borrowerId } })
+    await props.deleteOne({ _id: propId })
+    assert.equal((await fetchLoans(ownerToken)).status, 500)
+    await loans.deleteOne({ _id: loanId })
+    await associations.deleteMany({ _id: { $in: [ownerId, borrowerId, outsiderId] } })
   })
 
   test('invites association users and activates their account with a one-time token', async () => {

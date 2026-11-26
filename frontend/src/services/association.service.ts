@@ -48,6 +48,16 @@ export interface AssociationReservation {
   createdAt: string
 }
 
+export interface AssociationLoan {
+  id: string
+  type: 'loan' | 'lending'
+  propName: string
+  associationName: string
+  startDate: string
+  endDate: string
+  status: 'Afventer svar' | 'Godkendt' | 'Afvist' | 'Afleveret' | 'Annulleret'
+}
+
 export interface AssociationUser {
   id: string
   firstName: string
@@ -161,6 +171,57 @@ function isAssociationReservation(value: unknown): value is AssociationReservati
     && typeof reservation.endDate === 'string'
     && /^\d{4}-\d{2}-\d{2}$/.test(reservation.endDate)
     && typeof reservation.createdAt === 'string'
+}
+
+function isDateOnly(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const date = new Date(`${value}T00:00:00.000Z`)
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
+}
+
+function isAssociationLoan(value: unknown): value is AssociationLoan {
+  if (typeof value !== 'object' || value === null) return false
+  const loan = value as Partial<AssociationLoan>
+  return typeof loan.id === 'string' && /^[a-f\d]{24}$/i.test(loan.id)
+    && (loan.type === 'loan' || loan.type === 'lending')
+    && typeof loan.propName === 'string' && loan.propName.trim().length > 0
+    && typeof loan.associationName === 'string' && loan.associationName.trim().length > 0
+    && isDateOnly(loan.startDate) && isDateOnly(loan.endDate)
+    && loan.startDate <= loan.endDate
+    && ['Afventer svar', 'Godkendt', 'Afvist', 'Afleveret', 'Annulleret'].includes(loan.status ?? '')
+}
+
+export async function getCurrentAssociationLoans(): Promise<AssociationLoan[]> {
+  const accessToken = sessionStorage.getItem('rekvisit-register.access-token')
+  if (!accessToken) throw new UnauthorizedError('Du er ikke logget ind.')
+  let response: Response
+  try {
+    response = await fetch('/api/associations/current/loans', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+  } catch {
+    throw new Error('Lån og udlån kunne ikke hentes. Kontrollér forbindelsen, og prøv igen.')
+  }
+  if (response.status === 401) {
+    clearAuthSession()
+    throw new UnauthorizedError('Dit login er udløbet. Log ind igen.')
+  }
+  let body: unknown
+  try {
+    body = await response.json()
+  } catch {
+    throw new Error('Lån og udlån kunne ikke hentes. Prøv igen senere.')
+  }
+  if (!response.ok) {
+    if (typeof body === 'object' && body !== null && 'error' in body
+      && typeof body.error === 'string') throw new Error(body.error)
+    throw new Error(`Lån og udlån kunne ikke hentes (HTTP ${response.status}).`)
+  }
+  if (typeof body !== 'object' || body === null || !('loans' in body)
+    || !Array.isArray(body.loans) || !body.loans.every(isAssociationLoan)) {
+    throw new Error('Lån og udlån kunne ikke indlæses. Kontakt teknisk support.')
+  }
+  return body.loans
 }
 
 function isAssociationUser(value: unknown): value is AssociationUser {
