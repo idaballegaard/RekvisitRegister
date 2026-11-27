@@ -8,8 +8,8 @@ import {
   type AssociationLoan,
   type AssociationLoanDetail,
   type LoanDecision,
-} from '../services/association.service'
-import { UnauthorizedError } from '../services/auth.service'
+} from '../../services/association.service'
+import { UnauthorizedError } from '../../services/auth.service'
 
 type LoanType = 'Lån' | 'Udlån'
 

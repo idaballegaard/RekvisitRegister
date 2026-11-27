@@ -2,10 +2,10 @@ import { afterEach, describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import PropImage from '../components/PropImage.vue'
 import AcceptInvitationView from '../views/AcceptInvitationView.vue'
-import AdminView from '../views/AdminView.vue'
+import AdminView from '../views/admin/AdminView.vue'
 import LoginView from '../views/LoginView.vue'
 import ProfileView from '../views/ProfileView.vue'
-import PropDetailView from '../views/PropDetailView.vue'
+import PropDetailView from '../views/admin/PropDetailView.vue'
 import ResetPasswordView from '../views/ResetPasswordView.vue'
 import VerifyEmailView from '../views/VerifyEmailView.vue'
 
@@ -204,6 +204,55 @@ describe('AdminView', () => {
     routeState.query.tab = ''
     routeState.query.q = 'stol'
     sessionStorage.clear()
+  })
+
+  it.each([
+    ['Generelt', 'general'],
+    ['Egne rekvisitter', 'props'],
+    ['Brugere', 'users'],
+    ['Lån', 'loans'],
+  ])('shows the shared header and logs out from %s', async (_label, tab) => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    routeState.query.tab = tab
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+    if (tab === 'props') {
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ props: [] }), { status: 200 }))
+    } else if (tab === 'users') {
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ users: [] }), { status: 200 }))
+    } else if (tab === 'loans') {
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ loans: [] }), { status: 200 }))
+    }
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+    await vi.waitFor(() => expect(wrapper.get('header').text()).toContain('Skarntyden'))
+    await vi.waitFor(() => expect(wrapper.find(`nav button[aria-current="page"]`).text()).toBe(_label))
+    expect(wrapper.get('header').text()).toContain('Foreningsansvarlig')
+    await wrapper.get('button[aria-label="Log ud"]').trigger('click')
+    expect(sessionStorage.getItem('rekvisit-register.access-token')).toBeNull()
+    expect(routerReplace).toHaveBeenCalledWith({ name: 'login' })
+  })
+
+  it.each(['create', 'detail'] as const)('shows the shared header and logs out from the prop %s page', async (mode) => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+    if (mode === 'detail') {
+      fetchMock
+        .mockResolvedValueOnce(new Response(JSON.stringify(associationPropsResponse), { status: 200 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ reservations: [] }), { status: 200 }))
+    }
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(PropDetailView, { props: mode === 'create' ? { mode: 'create' } : {} })
+    await vi.waitFor(() => expect(wrapper.find('#prop-detail-heading').exists()).toBe(true))
+    expect(wrapper.get('header').text()).toContain('Skarntyden')
+    expect(wrapper.get('header').text()).toContain('Foreningsansvarlig')
+    expect(wrapper.get('nav button[aria-current="page"]').text()).toBe('Egne rekvisitter')
+    await wrapper.get('button[aria-label="Log ud"]').trigger('click')
+    expect(sessionStorage.getItem('rekvisit-register.access-token')).toBeNull()
+    expect(routerReplace).toHaveBeenCalledWith({ name: 'login' })
   })
 
   it('shows general association details and every warehouse address', async () => {
@@ -438,6 +487,115 @@ describe('AdminView', () => {
     })
   })
 
+  it('preserves tab data and form inputs without reloading when switching tabs', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ users: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationPropsResponse), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Kontaktoplysninger'))
+    const openTab = async (label: string) => {
+      const tab = wrapper.findAll('nav button').find((button) => button.text() === label)
+      expect(tab).toBeDefined()
+      await tab!.trigger('click')
+    }
+
+    await openTab('Brugere')
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+    await wrapper.get('#user-first-name').setValue('Grace')
+    await openTab('Egne rekvisitter')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Læderkuffert'))
+    await wrapper.get('#prop-search').setValue('rejse')
+    await openTab('Brugere')
+    expect((wrapper.get('#user-first-name').element as HTMLInputElement).value).toBe('Grace')
+    await openTab('Egne rekvisitter')
+    expect((wrapper.get('#prop-search').element as HTMLInputElement).value).toBe('rejse')
+    expect(wrapper.text()).toContain('Læderkuffert')
+    expect(wrapper.text()).not.toContain('Træstol')
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+  })
+
+  it('preserves general tab edits when switching tabs', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ users: [] }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+    await vi.waitFor(() => expect(wrapper.find('#contacts-heading').exists()).toBe(true))
+    await wrapper.get('section[aria-labelledby="contacts-heading"] button').trigger('click')
+    await wrapper.get('#association-contact-name').setValue('Ny kontaktperson')
+    await wrapper.findAll('button').find((button) => button.text().includes('Tilføj lager'))!.trigger('click')
+    await wrapper.get('input[name="address"]').setValue('Ny lageradresse')
+
+    await wrapper.findAll('nav button').find((button) => button.text() === 'Brugere')!.trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Invitér en bruger'))
+    await wrapper.findAll('nav button').find((button) => button.text() === 'Generelt')!.trigger('click')
+
+    expect((wrapper.get('#association-contact-name').element as HTMLInputElement).value).toBe('Ny kontaktperson')
+    expect((wrapper.get('input[name="address"]').element as HTMLInputElement).value).toBe('Ny lageradresse')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('uses updated warehouse addresses in the cached prop search', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const updatedAssociation = {
+      ...associationResponse.association,
+      storageLocations: [
+        { ...associationResponse.association.storageLocations[0], address: 'Industrivej 9' },
+        associationResponse.association.storageLocations[1],
+      ],
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationPropsResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ association: updatedAssociation }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+    await vi.waitFor(() => expect(wrapper.find('#contacts-heading').exists()).toBe(true))
+    const propsTab = wrapper.findAll('nav button').find((button) => button.text() === 'Egne rekvisitter')!
+    const generalTab = wrapper.findAll('nav button').find((button) => button.text() === 'Generelt')!
+    await propsTab.trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Træstol'))
+    await wrapper.get('#prop-search').setValue('Industrivej 9')
+    expect(wrapper.text()).not.toContain('Træstol')
+
+    await generalTab.trigger('click')
+    const location = wrapper.get('[aria-label="Foreningens lageradresser"] li')
+    await location.get('button').trigger('click')
+    await location.get('input[name="editAddress"]').setValue('Industrivej 9')
+    await location.get('form').trigger('submit')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Lageradressen er opdateret.'))
+    await propsTab.trigger('click')
+    expect(wrapper.text()).toContain('Træstol')
+    expect(wrapper.text()).not.toContain('Læderkuffert')
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+  })
+
+  it('retries loading a tab after an error', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response('Server error', { status: 500 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationPropsResponse), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(AdminView)
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Kontaktoplysninger'))
+    const openProps = wrapper.findAll('nav button').find((button) => button.text() === 'Egne rekvisitter')
+    expect(openProps).toBeDefined()
+    await openProps!.trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('[role="alert"]').exists()).toBe(true))
+    await openProps!.trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Læderkuffert'))
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+  })
+
   it('opens the prop creation form from the overview', async () => {
     sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
     vi.stubGlobal('fetch', vi.fn()
@@ -568,6 +726,32 @@ describe('AdminView', () => {
     expect(fetchMock.mock.calls[3]?.[0]).toBe(`/api/associations/current/props/${createdProp.id}/images`)
     expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({ method: 'POST', body: files[0] })
     expect(fetchMock.mock.calls[4]?.[1]).toMatchObject({ method: 'POST', body: files[1] })
+  })
+
+  it('keeps the created prop accessible when its reservation fails', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const createdProp = associationPropsResponse.props[0]
+    if (!createdProp) throw new Error('Testrekvisit mangler.')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ prop: createdProp }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'Perioden overlapper.' }), { status: 409 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(PropDetailView, { props: { mode: 'create' } })
+    await vi.waitFor(() => expect(wrapper.find('#reservation-start-date').exists()).toBe(true))
+    await wrapper.get('#reservation-start-date').setValue('2026-12-10')
+    await wrapper.get('#reservation-end-date').setValue('2026-12-12')
+    await wrapper.get('form').trigger('submit')
+
+    await vi.waitFor(() => expect(wrapper.get('[role="alert"]').text())
+      .toContain('Rekvisitten er oprettet, men reservationen kunne ikke oprettes'))
+    await wrapper.get('form').trigger('submit')
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    await wrapper.findAll('button').find((button) => button.text() === 'Åbn den oprettede rekvisit')!.trigger('click')
+    expect(routerPush).toHaveBeenCalledWith({
+      name: 'admin-prop-detail', params: { propId: createdProp.id },
+    })
   })
 
   it('shows failed image upload without creating a duplicate prop', async () => {
@@ -1144,6 +1328,34 @@ describe('AdminView', () => {
       })
     })
     expect(fetchMock.mock.calls[4]?.[1]).toMatchObject({ method: 'DELETE' })
+  })
+
+  it('moves focus into the deletion dialog, traps it, and restores it on escape', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationPropsResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ reservations: [] }), { status: 200 })))
+    const wrapper = mount(PropDetailView, { attachTo: document.body })
+    try {
+      await vi.waitFor(() => expect(wrapper.find('#prop-detail-heading').exists()).toBe(true))
+      const openButton = wrapper.findAll('button').find((button) => button.text() === 'Slet rekvisit')!
+      openButton.element.focus()
+      await openButton.trigger('click')
+      const dialog = wrapper.get('[role="dialog"]')
+      const [cancel, confirm] = dialog.findAll('button')
+      expect(document.activeElement).toBe(cancel!.element)
+      await cancel!.trigger('keydown', { key: 'Tab', shiftKey: true })
+      expect(document.activeElement).toBe(confirm!.element)
+      await confirm!.trigger('keydown', { key: 'Tab' })
+      expect(document.activeElement).toBe(cancel!.element)
+      await dialog.trigger('keydown', { key: 'Escape' })
+      await vi.waitFor(() => expect(document.activeElement).toBe(openButton.element))
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    } finally {
+      wrapper.unmount()
+    }
   })
 
   it('explains why a prop with active loans cannot be deleted', async () => {

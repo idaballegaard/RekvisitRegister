@@ -33,19 +33,19 @@ const router = createRouter({
     {
       path: '/admin/props/new',
       name: 'admin-prop-create',
-      component: () => import('../views/PropCreateView.vue'),
+      component: () => import('../views/admin/PropCreateView.vue'),
       meta: { requiresAuth: true },
     },
     {
       path: '/admin/props/:propId',
       name: 'admin-prop-detail',
-      component: () => import('../views/PropDetailView.vue'),
+      component: () => import('../views/admin/PropDetailView.vue'),
       meta: { requiresAuth: true },
     },
     {
       path: '/admin',
       name: 'admin',
-      component: () => import('../views/AdminView.vue'),
+      component: () => import('../views/admin/AdminView.vue'),
       meta: { requiresAuth: true },
     },
   ],
