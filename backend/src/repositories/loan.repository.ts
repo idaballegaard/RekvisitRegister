@@ -1,8 +1,33 @@
-import type { ClientSession, ObjectId, WithId } from 'mongodb'
+import { ObjectId, type ClientSession, type WithId } from 'mongodb'
 import { getDatabase } from '../config/database.ts'
 import type { AssociationDocument } from '../models/association.model.ts'
 import type { LoanDocument } from '../models/loan.model.ts'
 import type { PropDocument } from '../models/prop.model.ts'
+import { LOAN_STATUSES } from '../models/loan.model.ts'
+
+export class PropHasActiveLoansError extends Error {}
+export class InvalidPropLoansError extends Error {}
+
+export async function preserveLoanPropName(
+  propId: ObjectId,
+  associationId: ObjectId,
+  propName: string,
+  session: ClientSession,
+): Promise<void> {
+  const loans = getDatabase().collection<LoanDocument>('loan')
+  const linkedLoans = await loans.find({ propId }, { session }).toArray()
+  if (linkedLoans.some((loan) => !(loan.ownerAssociationId instanceof ObjectId)
+    || !loan.ownerAssociationId.equals(associationId)
+    || !LOAN_STATUSES.includes(loan.status))) {
+    throw new InvalidPropLoansError('Rekvisitten har lån med ugyldige oplysninger og kan ikke slettes.')
+  }
+  if (linkedLoans.some((loan) => loan.status === 'Afventer svar' || loan.status === 'Godkendt')) {
+    throw new PropHasActiveLoansError('Rekvisitten kan ikke slettes, fordi den har lån, der afventer svar eller er godkendt.')
+  }
+  if (linkedLoans.length > 0) {
+    await loans.updateMany({ propId }, { $set: { deletedPropName: propName } }, { session })
+  }
+}
 
 export async function findLoansForAssociation(associationId: ObjectId): Promise<WithId<LoanDocument>[]> {
   return getDatabase().collection<LoanDocument>('loan')

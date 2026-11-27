@@ -1,4 +1,5 @@
 import { ObjectId, type WithId } from 'mongodb'
+import { withTransaction } from '../config/database.ts'
 import type {
   AssociationProp,
   PropDocument,
@@ -13,6 +14,7 @@ import {
 } from '../repositories/prop.repository.ts'
 import { deletePropImages } from './prop-image.service.ts'
 import { deleteReservationsForProp } from '../repositories/reservation.repository.ts'
+import { preserveLoanPropName } from '../repositories/loan.repository.ts'
 
 export class AssociationPropsError extends Error {}
 export class AssociationPropNotFoundError extends Error {}
@@ -166,14 +168,18 @@ export async function deleteAssociationProp(
   if (!/^[a-f\d]{24}$/i.test(associationId) || !/^[a-f\d]{24}$/i.test(propId)) {
     throw new AssociationPropNotFoundError()
   }
-  const deletedProp = await deletePropByIdForAssociation(
-    new ObjectId(propId),
-    new ObjectId(associationId),
-  )
-  if (!deletedProp) {
-    throw new AssociationPropNotFoundError()
-  }
-  await deleteReservationsForProp(new ObjectId(associationId), new ObjectId(propId))
+  const propObjectId = new ObjectId(propId)
+  const associationObjectId = new ObjectId(associationId)
+  const deletedProp = await withTransaction(async (_database, session) => {
+    const prop = await deletePropByIdForAssociation(propObjectId, associationObjectId, session)
+    if (!prop) throw new AssociationPropNotFoundError()
+    if (typeof prop.name !== 'string' || !prop.name.trim()) {
+      throw new AssociationPropsError('Rekvisittens navn er ugyldigt, og den kan ikke slettes.')
+    }
+    await preserveLoanPropName(propObjectId, associationObjectId, prop.name, session)
+    await deleteReservationsForProp(associationObjectId, propObjectId, session)
+    return prop
+  })
   await deletePropImages(deletedProp.imageIds ?? [])
 }
 

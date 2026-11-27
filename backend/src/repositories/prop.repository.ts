@@ -1,4 +1,4 @@
-import type { ObjectId, WithId } from 'mongodb'
+import type { ClientSession, ObjectId, WithId } from 'mongodb'
 import { getDatabase } from '../config/database.ts'
 import type { PropDocument, UpdateAssociationPropInput } from '../models/prop.model.ts'
 
@@ -49,8 +49,9 @@ export async function updatePropByIdForAssociation(
 export async function deletePropByIdForAssociation(
   propId: ObjectId,
   associationId: ObjectId,
+  session: ClientSession,
 ): Promise<WithId<PropDocument> | null> {
   return getDatabase()
     .collection<PropDocument>('prop')
-    .findOneAndDelete({ _id: propId, associationId })
+    .findOneAndDelete({ _id: propId, associationId }, { session })
 }

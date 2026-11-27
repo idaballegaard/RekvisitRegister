@@ -18,6 +18,7 @@ export interface LoanDocument {
   endDate: Date
   status: LoanStatus
   borrowerMessage?: string
+  deletedPropName?: string
 }
 
 export interface AssociationLoan {

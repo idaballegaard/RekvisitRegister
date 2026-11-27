@@ -681,7 +681,7 @@ export const openApiDocument = {
       },
       delete: {
         summary: 'Slet en rekvisit i den indloggede brugers forening',
-        description: 'Kræver tilladelsen manageProps (foreningsansvarlig eller rekvisitansvarlig). Rekvisittens billeder fjernes også.',
+        description: 'Kræver tilladelsen manageProps. Rekvisitter med lån, der afventer svar eller er godkendt, kan ikke slettes. Navnet bevares for afsluttede lån; billeder og reservationer fjernes.',
         security: [{ bearerAuth: [] }],
         parameters: [
           {
@@ -707,7 +707,8 @@ export const openApiDocument = {
           '401': { description: 'Bearer-token mangler eller er ugyldigt.' },
           '403': { description: 'Brugeren må ikke slette rekvisitter.' },
           '404': { description: 'Rekvisitten blev ikke fundet i foreningen.' },
-          '500': { description: 'Rekvisitten blev slettet, men billedfiler kunne ikke ryddes.' },
+          '409': { description: 'Rekvisitten har lån, der afventer svar eller er godkendt.' },
+          '500': { description: 'Sletningen kunne ikke gennemføres, eller billedfiler kunne ikke ryddes efter sletning.' },
         },
       },
     },

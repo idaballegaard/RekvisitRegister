@@ -1146,6 +1146,25 @@ describe('AdminView', () => {
     expect(fetchMock.mock.calls[4]?.[1]).toMatchObject({ method: 'DELETE' })
   })
 
+  it('explains why a prop with active loans cannot be deleted', async () => {
+    sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
+    const error = 'Rekvisitten kan ikke slettes, fordi den har lån, der afventer svar eller er godkendt.'
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(currentUserResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(associationPropsResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ reservations: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error }), { status: 409 })))
+    const wrapper = mount(PropDetailView)
+    await vi.waitFor(() => expect(wrapper.get('#prop-detail-heading').text()).toBe('Træstol'))
+    await wrapper.findAll('button').find((button) => button.text() === 'Slet rekvisit')?.trigger('click')
+    await wrapper.findAll('[role="dialog"] button').find((button) => button.text() === 'Slet rekvisit')?.trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('[role="alert"]').text()).toBe(error))
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(wrapper.get('#prop-detail-heading').text()).toBe('Træstol')
+    expect(routerPush).not.toHaveBeenCalled()
+  })
+
   it('lets an association admin add a warehouse address', async () => {
     sessionStorage.setItem('rekvisit-register.access-token', 'current-test-token')
     const newLocation = {

@@ -65,9 +65,13 @@ async function mapAssociationLoans(
     const otherAssociation = associationsById.get(
       (isOwner ? loan.borrowerAssociationId : loan.ownerAssociationId).toHexString(),
     )
-    if (!prop || typeof prop.name !== 'string' || !prop.name.trim()
-      || !(prop.associationId instanceof ObjectId)
-      || !prop.associationId.equals(loan.ownerAssociationId)
+    if (prop && (!(prop.associationId instanceof ObjectId)
+      || !prop.associationId.equals(loan.ownerAssociationId))) {
+      throw new AssociationLoansError('En rekvisit eller forening tilknyttet et lån kunne ikke findes.')
+    }
+    const propName = prop ? prop.name : loan.deletedPropName
+    if ((!prop && !['Afvist', 'Afleveret', 'Annulleret'].includes(loan.status))
+      || typeof propName !== 'string' || !propName.trim()
       || !otherAssociation || typeof otherAssociation.name !== 'string'
       || !otherAssociation.name.trim()) {
       throw new AssociationLoansError('En rekvisit eller forening tilknyttet et lån kunne ikke findes.')
@@ -75,7 +79,7 @@ async function mapAssociationLoans(
     return {
       id: loan._id.toHexString(),
       type: isOwner ? 'lending' : 'loan',
-      propName: prop.name,
+      propName,
       associationName: otherAssociation.name,
       startDate: loan.startDate.toISOString().slice(0, 10),
       endDate: loan.endDate.toISOString().slice(0, 10),

@@ -637,6 +637,119 @@ describe('auth endpoints with MongoDB', () => {
     )
   })
 
+  test('blocks deletion for active loans and preserves completed loan history', async () => {
+    const borrowerId = new ObjectId()
+    const propId = new ObjectId()
+    const now = new Date()
+    const associations = getDatabase().collection<AssociationDocument>('associations')
+    const props = getDatabase().collection<PropDocument>('prop')
+    const loans = getDatabase().collection<LoanDocument>('loan')
+    const reservations = getDatabase().collection<ReservationDocument>('reservation')
+    await associations.insertOne({ _id: borrowerId, name: 'Borrower', createdAt: now, updatedAt: now })
+    await props.insertOne({
+      _id: propId, associationId: expectedAssociationId, storageLocationId: storageLocationIds[0],
+      name: 'Historisk rekvisit', description: '', availability: true,
+      dimensions: { height: 1, width: 1, depth: 1, unit: 'cm' },
+      quantity: 1, colour: '', placement: '', tags: [], condition: '', historicalPeriod: '',
+    })
+    const image = await sharp({
+      create: { width: 2, height: 2, channels: 3, background: '#ff0000' },
+    }).png().toBuffer()
+    const imageResponse = await fetch(`${baseUrl}/associations/current/props/${propId.toHexString()}/images`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + authenticatedAccessToken, 'Content-Type': 'image/png' },
+      body: new Uint8Array(image),
+    })
+    assert.equal(imageResponse.status, 201)
+    const { imageId } = await imageResponse.json() as { imageId: string }
+    const ids = LOAN_STATUSES.map(() => new ObjectId())
+    await loans.insertMany(LOAN_STATUSES.map((status, index) => ({
+      _id: ids[index]!, propId, ownerAssociationId: expectedAssociationId, borrowerAssociationId: borrowerId,
+      startDate: new Date('2026-12-01T00:00:00Z'), endDate: new Date('2026-12-05T00:00:00Z'), status,
+    })))
+    await reservations.insertOne({
+      propId, associationId: expectedAssociationId,
+      startDate: new Date('2027-01-01T00:00:00Z'), endDate: new Date('2027-01-02T00:00:00Z'),
+      createdByUserId: expectedUserId, createdAt: now,
+    })
+    const deleteUrl = `${baseUrl}/associations/current/props/${propId.toHexString()}`
+    const remove = () => fetch(deleteUrl, {
+      method: 'DELETE', headers: { Authorization: 'Bearer ' + associationManagerAccessToken },
+    })
+    const pendingConflict = await remove()
+    assert.equal(pendingConflict.status, 409)
+    assert.match((await pendingConflict.json() as { error: string }).error, /afventer svar eller er godkendt/)
+    assert.ok(await props.findOne({ _id: propId }))
+    assert.ok(await readFile(join(imageDirectory!, `${imageId}.webp`)))
+    assert.equal(await reservations.countDocuments({ propId }), 1)
+    assert.equal(await loans.countDocuments({ propId, deletedPropName: { $exists: true } }), 0)
+    await loans.updateOne({ _id: ids[0] }, { $set: { status: 'Afvist' } })
+    assert.equal((await remove()).status, 409)
+    assert.ok(await props.findOne({ _id: propId }))
+    await loans.updateOne({ _id: ids[1] }, { $set: { status: 'Afleveret' } })
+    await getDatabase().collection('loan').updateOne({ _id: ids[0] }, { $set: { status: 'Ugyldig' } })
+    assert.equal((await remove()).status, 500)
+    assert.ok(await props.findOne({ _id: propId }))
+    await loans.updateOne({ _id: ids[0] }, { $set: { status: 'Afvist' } })
+    assert.equal((await remove()).status, 200)
+    assert.equal(await props.findOne({ _id: propId }), null)
+    await assert.rejects(readFile(join(imageDirectory!, `${imageId}.webp`)), { code: 'ENOENT' })
+    assert.equal(await reservations.countDocuments({ propId }), 0)
+    assert.equal(await loans.countDocuments({ propId, deletedPropName: 'Historisk rekvisit' }), 5)
+
+    const borrowerToken = await createAccessToken({
+      userId: expectedUserId, firstName: 'Test', lastName: 'User', userName: 'test',
+      role: ROLES.ASSOCIATION_ADMIN, associationId: borrowerId.toHexString(),
+    })
+    for (const token of [authenticatedAccessToken, borrowerToken]) {
+      const headers = { Authorization: 'Bearer ' + token }
+      const list = await fetch(`${baseUrl}/associations/current/loans`, { headers })
+      assert.equal(list.status, 200)
+      const body = await list.json() as { loans: { id: string; propName: string }[] }
+      for (const id of ids) {
+        assert.equal(body.loans.find((loan) => loan.id === id.toHexString())?.propName, 'Historisk rekvisit')
+        const detail = await fetch(`${baseUrl}/associations/current/loans/${id.toHexString()}`, { headers })
+        assert.equal(detail.status, 200)
+        assert.equal((await detail.json() as { loan: { propName: string } }).loan.propName, 'Historisk rekvisit')
+      }
+    }
+    const racePropId = new ObjectId()
+    const raceLoanId = new ObjectId()
+    await props.insertOne({
+      _id: racePropId, associationId: expectedAssociationId, storageLocationId: storageLocationIds[0],
+      name: 'Samtidig rekvisit', description: '', availability: true,
+      dimensions: { height: 1, width: 1, depth: 1, unit: 'cm' },
+      quantity: 1, colour: '', placement: '', tags: [], condition: '', historicalPeriod: '',
+    })
+    await loans.insertOne({
+      _id: raceLoanId, propId: racePropId, ownerAssociationId: expectedAssociationId, borrowerAssociationId: borrowerId,
+      startDate: new Date('2026-12-01T00:00:00Z'), endDate: new Date('2026-12-05T00:00:00Z'), status: 'Afventer svar',
+    })
+    const removeRaceProp = () => fetch(`${baseUrl}/associations/current/props/${racePropId.toHexString()}`, {
+      method: 'DELETE', headers: { Authorization: 'Bearer ' + associationManagerAccessToken },
+    })
+    const [deleteRace, cancelRace] = await Promise.all([
+      removeRaceProp(),
+      fetch(`${baseUrl}/associations/current/loans/${raceLoanId.toHexString()}`, {
+        method: 'PATCH',
+        headers: { Authorization: 'Bearer ' + borrowerToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'Annulleret' }),
+      }),
+    ])
+    assert.equal(cancelRace.status, 200)
+    assert.ok([200, 409].includes(deleteRace.status))
+    if (deleteRace.status === 409) assert.equal((await removeRaceProp()).status, 200)
+    assert.equal((await loans.findOne({ _id: raceLoanId }))?.deletedPropName, 'Samtidig rekvisit')
+    const raceDetail = await fetch(`${baseUrl}/associations/current/loans/${raceLoanId.toHexString()}`, {
+      headers: { Authorization: 'Bearer ' + borrowerToken },
+    })
+    assert.equal(raceDetail.status, 200)
+    assert.equal((await raceDetail.json() as { loan: { propName: string } }).loan.propName, 'Samtidig rekvisit')
+    await loans.deleteMany({ propId })
+    await loans.deleteOne({ _id: raceLoanId })
+    await associations.deleteOne({ _id: borrowerId })
+  })
+
   test('allows managers to block non-overlapping reservation periods for owned props', async () => {
     const manager = await getDatabase().collection<UserDocument>('users')
       .findOne({ userName: 'integration.manager' })

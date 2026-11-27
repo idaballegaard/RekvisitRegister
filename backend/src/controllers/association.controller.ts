@@ -12,6 +12,7 @@ import {
   validateUpdateAssociationPropInput,
 } from '../services/prop.service.ts'
 import { PropImageCleanupError } from '../services/prop-image.service.ts'
+import { InvalidPropLoansError, PropHasActiveLoansError } from '../repositories/loan.repository.ts'
 import {
   AssociationNotFoundError,
   AssociationStorageLocationNotFoundError,
@@ -129,6 +130,14 @@ export const deleteCurrentAssociationProp: RequestHandler = async (request, resp
   } catch (error) {
     if (error instanceof AssociationPropNotFoundError) {
       response.status(404).json({ error: 'Rekvisitten blev ikke fundet.' })
+      return
+    }
+    if (error instanceof PropHasActiveLoansError) {
+      response.status(409).json({ error: error.message })
+      return
+    }
+    if (error instanceof AssociationPropsError || error instanceof InvalidPropLoansError) {
+      response.status(500).json({ error: error.message })
       return
     }
     if (error instanceof PropImageCleanupError) {

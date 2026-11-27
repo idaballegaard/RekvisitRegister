@@ -87,7 +87,8 @@ export async function deleteReservation(
 export async function deleteReservationsForProp(
   associationId: ObjectId,
   propId: ObjectId,
+  session: ClientSession,
 ): Promise<void> {
   await getDatabase().collection<ReservationDocument>('reservation')
-    .deleteMany({ associationId, propId })
+    .deleteMany({ associationId, propId }, { session })
 }
