@@ -507,9 +507,9 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="min-h-screen min-h-[100svh] bg-white font-sans text-gray-dark">
+  <div class="admin-surface min-h-screen min-h-[100svh] bg-white font-sans text-gray-dark">
     <main
-      class="mx-auto w-full max-w-[1250px] px-0 pt-[68px] pb-8 max-[1080px]:px-5 max-[700px]:pt-6"
+      class="mx-auto w-full max-w-[1440px] px-5 pt-[68px] pb-8 sm:px-8 max-[700px]:pt-6"
     >
       <header class="border-b border-[#e2e0e0] pb-[22px]">
         <div class="flex items-start justify-between gap-6">

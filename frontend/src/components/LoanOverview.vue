@@ -226,7 +226,7 @@ onMounted(loadLoans)
             <th scope="col" class="w-[40%] px-3 py-3 font-normal">Rekvisit / forening</th>
             <th scope="col" class="w-[25%] px-3 py-3 font-normal">Periode</th>
             <th scope="col" class="w-[22%] px-3 py-3 font-normal">Status</th>
-            <th scope="col" class="px-3 py-3 font-normal"><span class="sr-only">Handling</span></th>
+            <th scope="col" class="relative px-3 py-3 font-normal"><span class="sr-only">Handling</span></th>
           </tr>
         </thead>
         <tbody>

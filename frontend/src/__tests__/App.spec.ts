@@ -224,7 +224,7 @@ describe('AdminView', () => {
       expect(wrapper.text()).toContain('Skarntyden')
     })
     expect(wrapper.get('main').classes()).toContain('mx-auto')
-    expect(wrapper.get('main').classes()).toContain('max-w-[1250px]')
+    expect(wrapper.get('main').classes()).toContain('max-w-[1440px]')
     expect(wrapper.text()).toContain('Adminpanel')
     expect(wrapper.get('h1').classes()).toContain('text-4xl')
     expect(wrapper.get('header > div > div > p').classes()).toContain('text-base')
