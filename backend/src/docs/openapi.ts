@@ -222,7 +222,7 @@ export const openApiDocument = {
     '/associations/current/loans': {
       get: {
         summary: 'Hent lån og udlån for den indloggede brugers forening',
-        description: 'Kun for foreningsansvarlige. Retningen og modparten beregnes ud fra den indloggede forening.',
+        description: 'For foreningsansvarlige og rekvisitansvarlige. Retningen og modparten beregnes ud fra den indloggede forening.',
         security: [{ bearerAuth: [] }],
         responses: {
           '200': {
@@ -255,7 +255,7 @@ export const openApiDocument = {
             },
           },
           '401': { description: 'Login mangler, er ugyldigt eller udløbet.' },
-          '403': { description: 'Brugeren er ikke foreningsansvarlig.' },
+          '403': { description: 'Brugeren har ikke adgang til låneoversigten.' },
           '500': { description: 'Lånene eller deres tilknyttede rekvisitter og foreninger kunne ikke læses.' },
         },
       },
@@ -263,7 +263,7 @@ export const openApiDocument = {
     '/associations/current/loans/{loanId}': {
       get: {
         summary: 'Hent detaljer om et lån for den indloggede brugers forening',
-        description: 'Kun for foreningsansvarlige i ejer- eller lånerforeningen.',
+        description: 'For foreningsansvarlige og rekvisitansvarlige i ejer- eller lånerforeningen.',
         security: [{ bearerAuth: [] }],
         parameters: [{ name: 'loanId', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
@@ -295,14 +295,14 @@ export const openApiDocument = {
             },
           },
           '401': { description: 'Login mangler, er ugyldigt eller udløbet.' },
-          '403': { description: 'Brugeren er ikke foreningsansvarlig.' },
+          '403': { description: 'Brugeren har ikke adgang til låneoversigten.' },
           '404': { description: 'Lånet blev ikke fundet for den aktuelle forening.' },
           '500': { description: 'Lånet eller dets tilknyttede rekvisit og forening kunne ikke læses.' },
         },
       },
       patch: {
-        summary: 'Godkend, afvis eller registrér aflevering af et lån',
-        description: 'Ejerforeningens foreningsansvarlige kan godkende eller afvise lån, der afventer svar. Lånerforeningens foreningsansvarlige kan markere godkendte lån som afleveret uden bekræftelse; rekvisitten frigives straks. Godkendelse kræver en periode uden overlappende reservationer eller godkendte lån. Start- og slutdag er inkluderet.',
+        summary: 'Behandl, afslut eller annullér et lån',
+        description: 'Ejerforeningens foreningsansvarlige kan godkende eller afvise lån, der afventer svar. Lånerforeningens foreningsansvarlige kan markere godkendte lån som afleveret. Lånerforeningens forenings- eller rekvisitansvarlige kan annullere lån, der afventer svar eller er godkendt. Ved aflevering eller annullering frigives rekvisitten straks. Godkendelse kræver en periode uden overlappende reservationer eller godkendte lån; start- og slutdag er inkluderet.',
         security: [{ bearerAuth: [] }],
         parameters: [{ name: 'loanId', in: 'path', required: true, schema: { type: 'string' } }],
         requestBody: {
@@ -312,7 +312,7 @@ export const openApiDocument = {
               schema: {
                 type: 'object',
                 required: ['status'],
-                properties: { status: { type: 'string', enum: ['Godkendt', 'Afvist', 'Afleveret'] } },
+                properties: { status: { type: 'string', enum: ['Godkendt', 'Afvist', 'Afleveret', 'Annulleret'] } },
               },
             },
           },
@@ -325,14 +325,14 @@ export const openApiDocument = {
                 schema: {
                   type: 'object',
                   required: ['status'],
-                  properties: { status: { type: 'string', enum: ['Godkendt', 'Afvist', 'Afleveret'] } },
+                  properties: { status: { type: 'string', enum: ['Godkendt', 'Afvist', 'Afleveret', 'Annulleret'] } },
                 },
               },
             },
           },
           '400': { description: 'Ugyldig afgørelse.' },
           '401': { description: 'Login mangler, er ugyldigt eller udløbet.' },
-          '403': { description: 'Brugeren er ikke foreningsansvarlig.' },
+          '403': { description: 'Brugeren har ikke rettighed til den ønskede handling.' },
           '404': { description: 'Lånet blev ikke fundet for den forening, som må udføre handlingen.' },
           '409': { description: 'Lånets status tillader ikke handlingen, rekvisitten mangler, eller perioden overlapper.' },
           '500': { description: 'Lånet kunne ikke behandles.' },

@@ -559,7 +559,7 @@ onMounted(async () => {
               Brugere
             </button>
           </li>
-          <li v-if="profile?.role === 'associationAdmin'">
+          <li v-if="profile?.role === 'associationAdmin' || profile?.role === 'propManager'">
             <button
               class="inline-flex h-[54px] items-center border-b-2 border-transparent px-0.5 text-base text-gray-medium hover:text-brand"
               type="button"

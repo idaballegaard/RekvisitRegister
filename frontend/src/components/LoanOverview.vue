@@ -13,6 +13,8 @@ import { UnauthorizedError } from '../services/auth.service'
 
 type LoanType = 'Lån' | 'Udlån'
 
+defineProps<{ canManageDecisions: boolean }>()
+
 const statusClasses: Record<AssociationLoan['status'], string> = {
   'Afventer svar': 'bg-yellow-100 text-yellow-800',
   'Godkendt': 'bg-green-100 text-green-800',
@@ -98,7 +100,8 @@ async function decideLoan(decision: LoanDecision): Promise<void> {
     loans.value = loans.value.map((entry) => entry.id === loan.id ? { ...entry, status: decision } : entry)
     decisionSuccess.value = decision === 'Godkendt'
       ? 'Lånet er godkendt.'
-      : decision === 'Afvist' ? 'Lånet er afvist.' : 'Lånet er markeret som afleveret.'
+      : decision === 'Afvist' ? 'Lånet er afvist.'
+        : decision === 'Afleveret' ? 'Lånet er markeret som afleveret.' : 'Lånet er annulleret.'
   } catch (error) {
     if (error instanceof UnauthorizedError) {
       await router.replace({ name: 'login' })
@@ -161,16 +164,17 @@ onMounted(loadLoans)
           <p>{{ decisionError }}</p>
           <button type="button" class="mt-2 underline" @click="openLoan(selectedLoan.id)">Opdatér lånet</button>
         </div>
-        <div v-if="selectedLoan.type === 'lending' && selectedLoan.status === 'Afventer svar'" class="mt-6 flex flex-wrap gap-3">
+        <div v-if="canManageDecisions && selectedLoan.type === 'lending' && selectedLoan.status === 'Afventer svar'" class="mt-6 flex flex-wrap gap-3">
           <button type="button" :disabled="isDeciding" class="rounded bg-brand px-5 py-2.5 font-semibold text-white hover:bg-[#7d0202] disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand" @click="decideLoan('Godkendt')">
             {{ isDeciding ? 'Behandler…' : 'Godkend' }}
           </button>
           <button type="button" :disabled="isDeciding" class="rounded border border-brand px-5 py-2.5 font-semibold text-brand hover:bg-[#f5eded] disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand" @click="decideLoan('Afvist')">Afvis</button>
         </div>
-        <div v-if="selectedLoan.type === 'loan' && selectedLoan.status === 'Godkendt'" class="mt-6">
-          <button type="button" :disabled="isDeciding" class="rounded bg-brand px-5 py-2.5 font-semibold text-white hover:bg-[#7d0202] disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand" @click="decideLoan('Afleveret')">
+        <div v-if="selectedLoan.type === 'loan' && (selectedLoan.status === 'Afventer svar' || selectedLoan.status === 'Godkendt')" class="mt-6 flex flex-wrap gap-3">
+          <button v-if="canManageDecisions && selectedLoan.status === 'Godkendt'" type="button" :disabled="isDeciding" class="rounded bg-brand px-5 py-2.5 font-semibold text-white hover:bg-[#7d0202] disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand" @click="decideLoan('Afleveret')">
             {{ isDeciding ? 'Behandler…' : 'Markér som afleveret' }}
           </button>
+          <button type="button" :disabled="isDeciding" class="rounded border border-brand px-5 py-2.5 font-semibold text-brand hover:bg-[#f5eded] disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand" @click="decideLoan('Annulleret')">Annullér lån</button>
         </div>
       </div>
     </template>

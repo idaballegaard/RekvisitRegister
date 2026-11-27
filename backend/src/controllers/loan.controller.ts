@@ -1,5 +1,7 @@
 import type { RequestHandler } from 'express'
 import { getAuthenticatedUser } from '../middleware/auth.middleware.ts'
+import { PERMISSIONS } from '../models/user.model.ts'
+import { hasPermission } from '../services/user.service.ts'
 import {
   AssociationLoanNotFoundError,
   AssociationLoansError,
@@ -45,7 +47,13 @@ export const getCurrentAssociationLoan: RequestHandler = async (request, respons
 export const patchCurrentAssociationLoan: RequestHandler = async (request, response, next) => {
   try {
     const status = validateLoanDecision(request.body)
-    await decideAssociationLoan(getAuthenticatedUser(request).associationId, String(request.params.loanId), status)
+    const user = getAuthenticatedUser(request)
+    const permission = status === 'Annulleret' ? PERMISSIONS.CANCEL_LOANS : PERMISSIONS.UPDATE_ASSOCIATION
+    if (!hasPermission(user.role, permission)) {
+      response.status(403).json({ error: 'Du har ikke adgang til denne handling' })
+      return
+    }
+    await decideAssociationLoan(user.associationId, String(request.params.loanId), status)
     response.json({ status })
   } catch (error) {
     if (error instanceof InvalidLoanDecisionError) {

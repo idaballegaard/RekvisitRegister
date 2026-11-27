@@ -62,7 +62,7 @@ export interface AssociationLoanDetail extends AssociationLoan {
   borrowerMessage: string | null
 }
 
-export type LoanDecision = 'Godkendt' | 'Afvist' | 'Afleveret'
+export type LoanDecision = 'Godkendt' | 'Afvist' | 'Afleveret' | 'Annulleret'
 
 export interface AssociationUser {
   id: string

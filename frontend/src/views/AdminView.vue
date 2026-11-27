@@ -140,7 +140,7 @@ function openGeneralTab(): void {
 }
 
 function openLoansTab(): void {
-  if (profile.value?.role === 'associationAdmin') {
+  if (profile.value?.role === 'associationAdmin' || profile.value?.role === 'propManager') {
     activeTab.value = 'loans'
   }
 }
@@ -418,13 +418,13 @@ onMounted(async () => {
     }
     profile.value = currentUser
     association.value = await getCurrentAssociation()
-    if (currentUser.role === 'propManager' || route.query.tab === 'props') {
+    if (route.query.tab === 'loans') {
+      openLoansTab()
+    } else if (currentUser.role === 'propManager' || route.query.tab === 'props') {
       propSearch.value = typeof route.query.q === 'string' ? route.query.q : ''
       await openPropsTab()
     } else if (currentUser.role === 'associationAdmin' && route.query.tab === 'users') {
       await openUsersTab()
-    } else if (currentUser.role === 'associationAdmin' && route.query.tab === 'loans') {
-      openLoansTab()
     }
   } catch (error) {
     if (error instanceof UnauthorizedError) {
@@ -513,7 +513,7 @@ onMounted(async () => {
               Brugere
             </button>
           </li>
-          <li v-if="profile?.role === 'associationAdmin'">
+          <li v-if="profile?.role === 'associationAdmin' || profile?.role === 'propManager'">
             <button
               class="inline-flex h-[54px] items-center border-b-2 px-0.5 text-base"
               :class="activeTab === 'loans'
@@ -857,7 +857,7 @@ onMounted(async () => {
         </section>
       </div>
 
-      <LoanOverview v-if="profile?.role === 'associationAdmin' && activeTab === 'loans'" />
+      <LoanOverview v-if="profile && activeTab === 'loans'" :can-manage-decisions="profile.role === 'associationAdmin'" />
 
       <section
         v-if="profile?.role === 'associationAdmin' && activeTab === 'users'"

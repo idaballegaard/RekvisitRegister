@@ -13,6 +13,8 @@ Backend forbinder til MongoDB via værdier i `backend/.env`.
 Et vellykket health-check svarer med `{"status":"ok","database":"connected"}`.
 Reservationer, afgørelser og aflevering af lån, brugeroprettelse og oprettelse af den første administrator bruger MongoDB-transaktioner, så databasen skal understøtte transaktioner (for eksempel MongoDB Atlas eller en lokal replica set). Godkendte lån og reservationer for samme rekvisit kan ikke overlappe, heller ikke på start- eller slutdagen. Når lånerforeningens foreningsansvarlige markerer et godkendt lån som afleveret, frigives rekvisitten straks uden bekræftelse fra ejerforeningen.
 
+Lånerforeningens foreningsansvarlige og rekvisitansvarlige kan annullere lån, som afventer svar eller er godkendt. Ved annullering af et godkendt lån frigives rekvisitten straks.
+
 ## Første bruger og forening
 
 Tilføj disse værdier til din lokale `backend/.env` med foreningens navn og den første foreningsansvarliges oplysninger:

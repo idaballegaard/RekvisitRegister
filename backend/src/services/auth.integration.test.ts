@@ -879,7 +879,7 @@ describe('auth endpoints with MongoDB', () => {
     }] })
     assert.deepEqual(await (await fetchLoans(await makeToken(outsiderId, ROLES.ASSOCIATION_ADMIN))).json(), { loans: [] })
     assert.equal((await fetch(`${baseUrl}/associations/current/loans`)).status, 401)
-    assert.equal((await fetchLoans(await makeToken(ownerId, ROLES.PROP_MANAGER))).status, 403)
+    assert.equal((await fetchLoans(await makeToken(ownerId, ROLES.PROP_MANAGER))).status, 200)
     assert.equal((await fetchLoans(await makeToken(ownerId, ROLES.SEARCH_USER))).status, 403)
     const ownerToken = await makeToken(ownerId, ROLES.ASSOCIATION_ADMIN)
     const fetchDetail = (token: string, id = loanId.toHexString()) => fetch(
@@ -904,7 +904,7 @@ describe('auth endpoints with MongoDB', () => {
     assert.equal((await fetchDetail(ownerToken, new ObjectId().toHexString())).status, 404)
     assert.equal((await fetchDetail(ownerToken, 'invalid')).status, 404)
     assert.equal((await fetch(`${baseUrl}/associations/current/loans/${loanId.toHexString()}`)).status, 401)
-    assert.equal((await fetchDetail(await makeToken(ownerId, ROLES.PROP_MANAGER))).status, 403)
+    assert.equal((await fetchDetail(await makeToken(ownerId, ROLES.PROP_MANAGER))).status, 200)
     await loans.updateOne({ _id: loanId }, { $unset: { borrowerMessage: '' } })
     const noMessage = await (await fetchDetail(ownerToken)).json() as { loan: { borrowerMessage: string | null } }
     assert.equal(noMessage.loan.borrowerMessage, null)
@@ -1037,6 +1037,52 @@ describe('auth endpoints with MongoDB', () => {
     assert.equal((await decide(afterReturn, 'Godkendt')).status, 409)
     await reservations.deleteMany({ propId, startDate: new Date('2026-12-01T00:00:00Z') })
     assert.equal((await decide(afterReturn, 'Godkendt')).status, 200)
+    const borrowerManager = await token(borrowerId, ROLES.PROP_MANAGER)
+    const pendingCancel = await makeLoan('2027-04-01', '2027-04-02')
+    assert.equal((await decide(pendingCancel, 'Annulleret', ownerToken)).status, 404)
+    assert.equal((await decide(pendingCancel, 'Annulleret', outsiderToken)).status, 404)
+    const searchToken = await createAccessToken({
+      userId: expectedUserId, firstName: 'Test', lastName: 'User', userName: 'test',
+      role: ROLES.SEARCH_USER, associationId: borrowerId.toHexString(),
+    })
+    assert.equal((await decide(pendingCancel, 'Annulleret', searchToken)).status, 403)
+    assert.equal((await fetch(`${baseUrl}/associations/current/loans/${pendingCancel}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{"status":"Annulleret"}',
+    })).status, 401)
+    assert.equal((await decide(pendingCancel, 'Godkendt', borrowerManager)).status, 403)
+    assert.equal((await decide(pendingCancel, 'Afleveret', borrowerManager)).status, 403)
+    assert.equal((await decide(pendingCancel, 'Annulleret', borrowerManager)).status, 200)
+    assert.equal((await decide(pendingCancel, 'Annulleret', borrowerToken)).status, 409)
+    assert.equal((await decide(overlapping, 'Annulleret', borrowerToken)).status, 409)
+    assert.equal((await decide(first, 'Annulleret', borrowerToken)).status, 409)
+    const cancelledState = await makeLoan('2027-05-01', '2027-05-02')
+    await loans.updateOne({ _id: cancelledState }, { $set: { status: 'Annulleret' } })
+    assert.equal((await decide(cancelledState, 'Annulleret', borrowerToken)).status, 409)
+    assert.equal((await decide(afterReturn, 'Annulleret', borrowerToken)).status, 200)
+    for (const accessToken of [ownerToken, borrowerToken]) {
+      const response = await fetch(`${baseUrl}/associations/current/loans/${afterReturn}`, {
+        headers: { Authorization: 'Bearer ' + accessToken },
+      })
+      assert.equal((await response.json() as { loan: { status: string } }).loan.status, 'Annulleret')
+    }
+    assert.equal((await reserve('2026-12-01', '2026-12-03')).status, 201)
+    await reservations.deleteMany({ propId, startDate: new Date('2026-12-01T00:00:00Z') })
+    const afterCancellation = await makeLoan('2026-12-01', '2026-12-03')
+    assert.equal((await decide(afterCancellation, 'Godkendt')).status, 200)
+    const raceCancellation = await makeLoan('2027-06-01', '2027-06-02')
+    const cancelRace = await Promise.all([
+      decide(raceCancellation, 'Annulleret', borrowerManager),
+      decide(raceCancellation, 'Annulleret', borrowerToken),
+    ])
+    assert.deepEqual(cancelRace.map((response) => response.status).sort(), [200, 409])
+    const approvalRace = await makeLoan('2027-07-01', '2027-07-02')
+    const [approval, cancellation] = await Promise.all([
+      decide(approvalRace, 'Godkendt'),
+      decide(approvalRace, 'Annulleret', borrowerManager),
+    ])
+    assert.ok([200, 409].includes(approval.status))
+    assert.equal(cancellation.status, 200)
+    assert.equal((await loans.findOne({ _id: approvalRace }))?.status, 'Annulleret')
     await loans.deleteMany({ propId })
     await reservations.deleteMany({ propId })
     await props.deleteOne({ _id: propId })

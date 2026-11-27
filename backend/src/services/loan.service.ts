@@ -9,12 +9,12 @@ export class AssociationLoanNotFoundError extends Error {}
 export class InvalidLoanDecisionError extends Error {}
 export class LoanDecisionConflictError extends Error {}
 
-export type LoanDecision = 'Godkendt' | 'Afvist' | 'Afleveret'
+export type LoanDecision = 'Godkendt' | 'Afvist' | 'Afleveret' | 'Annulleret'
 
 export function validateLoanDecision(input: unknown): LoanDecision {
   if (typeof input !== 'object' || input === null || Array.isArray(input)
     || !('status' in input) || (input.status !== 'Godkendt' && input.status !== 'Afvist'
-      && input.status !== 'Afleveret')) {
+      && input.status !== 'Afleveret' && input.status !== 'Annulleret')) {
     throw new InvalidLoanDecisionError('Vælg en gyldig afgørelse for lånet.')
   }
   return input.status
@@ -114,18 +114,21 @@ export async function decideAssociationLoan(
     throw new AssociationLoanNotFoundError('Lånet blev ikke fundet.')
   }
   const id = new ObjectId(loanId)
-  if (decision === 'Afleveret') {
+  if (decision === 'Afleveret' || decision === 'Annulleret') {
     await withTransaction(async (database, session) => {
       const loans = database.collection<LoanDocument>('loan')
       const loan = await loans.findOne({ _id: id, borrowerAssociationId: associationObjectId }, { session })
       if (!loan) throw new AssociationLoanNotFoundError('Lånet blev ikke fundet.')
       if (!isValidLoan(loan)) throw new AssociationLoansError('Lånet indeholder ugyldige oplysninger.')
-      if (loan.status !== 'Godkendt') {
-        throw new LoanDecisionConflictError('Kun godkendte lån kan markeres som afleveret. Opdatér lånet for at se den aktuelle status.')
+      const allowedStatuses = decision === 'Afleveret' ? ['Godkendt'] : ['Afventer svar', 'Godkendt']
+      if (!allowedStatuses.includes(loan.status)) {
+        throw new LoanDecisionConflictError(decision === 'Afleveret'
+          ? 'Kun godkendte lån kan markeres som afleveret. Opdatér lånet for at se den aktuelle status.'
+          : 'Kun lån, der afventer svar eller er godkendt, kan annulleres. Opdatér lånet for at se den aktuelle status.')
       }
       const result = await loans.updateOne(
-        { _id: id, borrowerAssociationId: associationObjectId, status: 'Godkendt' },
-        { $set: { status: 'Afleveret' } },
+        { _id: id, borrowerAssociationId: associationObjectId, status: loan.status },
+        { $set: { status: decision } },
         { session },
       )
       if (result.matchedCount !== 1) {

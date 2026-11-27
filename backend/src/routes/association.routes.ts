@@ -31,19 +31,19 @@ associationRouter.get('/associations/current', requireAuthentication, getCurrent
 associationRouter.get(
   '/associations/current/loans',
   requireAuthentication,
-  requirePermission(PERMISSIONS.UPDATE_ASSOCIATION),
+  requirePermission(PERMISSIONS.VIEW_LOANS),
   getCurrentAssociationLoans,
 )
 associationRouter.get(
   '/associations/current/loans/:loanId',
   requireAuthentication,
-  requirePermission(PERMISSIONS.UPDATE_ASSOCIATION),
+  requirePermission(PERMISSIONS.VIEW_LOANS),
   getCurrentAssociationLoan,
 )
 associationRouter.patch(
   '/associations/current/loans/:loanId',
   requireAuthentication,
-  requirePermission(PERMISSIONS.UPDATE_ASSOCIATION),
+  requirePermission(PERMISSIONS.VIEW_LOANS),
   patchCurrentAssociationLoan,
 )
 associationRouter.get(
