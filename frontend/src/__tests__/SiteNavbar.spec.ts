@@ -78,6 +78,20 @@ describe('site navigation', () => {
     expect(wrapper.get('a[href="/profile"]').text()).toBe('Profil')
   })
 
+  it('opens and closes the mobile menu and restores focus on Escape', async () => {
+    await setRole('associationAdmin')
+    const { wrapper } = await mountAt('/profile')
+    const button = wrapper.get('button[aria-controls="site-navigation-links"]')
+    expect(button.attributes('aria-expanded')).toBe('false')
+    await button.trigger('click')
+    expect(button.attributes('aria-expanded')).toBe('true')
+    expect(button.attributes('aria-label')).toBe('Luk menu')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await wrapper.vm.$nextTick()
+    expect(button.attributes('aria-expanded')).toBe('false')
+    wrapper.unmount()
+  })
+
   it('clears the role on logout and does not restore it from an earlier response', async () => {
     await setRole('associationAdmin')
     const { wrapper } = await mountAt('/profile')

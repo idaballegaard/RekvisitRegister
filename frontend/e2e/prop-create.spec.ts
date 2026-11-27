@@ -44,6 +44,9 @@ test('creates a prop and opens its detail page', async ({ page }) => {
     contentType: 'image/svg+xml',
     body: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>',
   }))
+  await page.route(`**/api/associations/current/props/${propId}/reservations`, (route) => route.fulfill({
+    json: { reservations: [] },
+  }))
 
   await page.goto('/admin?tab=props')
   await page.getByRole('button', { name: 'Tilføj rekvisit' }).click()

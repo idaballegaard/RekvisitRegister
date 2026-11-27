@@ -25,7 +25,7 @@ const {
         class="border-b border-[#e2e0e0] pt-10 pb-12 max-[700px]:py-8"
         aria-labelledby="contacts-heading"
       >
-        <div class="mb-6 flex items-center justify-between gap-4">
+        <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
           <h2 id="contacts-heading" class="text-2xl font-bold text-brand">
             Kontaktoplysninger
           </h2>
