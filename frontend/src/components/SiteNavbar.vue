@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { RouterLink, useRoute } from 'vue-router'
 import { computed } from 'vue'
+import { currentUserRole } from '../services/auth.service'
 
 const route = useRoute()
 const activeSection = computed(() => {
@@ -37,6 +38,7 @@ const activeSection = computed(() => {
           Teaterforeninger
         </span>
         <RouterLink
+          v-if="currentUserRole === 'associationAdmin' || currentUserRole === 'propManager'"
           :to="{ name: 'admin' }"
           :aria-current="activeSection === 'admin' ? 'page' : undefined"
           class="inline-flex min-h-[56px] items-center border-b-[3px] text-lg no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"

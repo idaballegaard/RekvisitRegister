@@ -41,3 +41,26 @@ test('navigation works on authenticated pages and fits desktop and mobile', asyn
   await expect(page).toHaveURL(/\/$/)
   await expect(nav).toHaveCount(0)
 })
+
+test('only users with admin access see the admin link', async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem('rekvisit-register.access-token', 'test-token'))
+  let role = 'searchUser'
+  await page.route('**/api/auth/me', (route) => route.fulfill({ json: { user: {
+    userId: '0123456789abcdef01234567', firstName: 'Ada', lastName: 'Lovelace',
+    userName: 'ada', email: 'ada@example.dk', emailVerified: true, role,
+    associationId: 'fedcba9876543210fedcba98', associationName: 'Teater',
+  } } }))
+
+  const nav = page.getByRole('navigation', { name: 'Hovednavigation' })
+  for (const [currentRole, roleLabel, visible] of [
+    ['searchUser', 'Søgebruger', false],
+    ['propManager', 'Rekvisitansvarlig', true],
+    ['associationAdmin', 'Foreningsansvarlig', true],
+  ] as const) {
+    role = currentRole
+    await page.goto('/profile')
+    await expect(page.getByText(`Teater · ${roleLabel}`)).toBeVisible()
+    await expect(nav.getByRole('link', { name: 'Adminpanel' })).toHaveCount(visible ? 1 : 0)
+    await expect(nav.getByRole('link', { name: 'Profil' })).toHaveAttribute('aria-current', 'page')
+  }
+})

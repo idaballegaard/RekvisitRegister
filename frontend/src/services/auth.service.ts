@@ -1,3 +1,5 @@
+import { readonly, ref } from 'vue'
+
 export interface AuthenticatedUser {
   userId: string
   firstName: string
@@ -41,6 +43,9 @@ interface AcceptInvitationCredentials {
 }
 
 const ACCESS_TOKEN_KEY = 'rekvisit-register.access-token'
+const userRole = ref<CurrentUserProfile['role'] | null>(null)
+
+export const currentUserRole = readonly(userRole)
 
 export class UnauthorizedError extends Error {}
 
@@ -75,6 +80,7 @@ export function hasAccessToken(): boolean {
 
 export function clearAuthSession(): void {
   sessionStorage.removeItem(ACCESS_TOKEN_KEY)
+  userRole.value = null
 }
 
 function isLoginResponse(value: unknown): value is LoginResponse {
@@ -133,6 +139,7 @@ export async function login(credentials: LoginCredentials): Promise<LoginRespons
   }
 
   sessionStorage.setItem(ACCESS_TOKEN_KEY, body.accessToken)
+  userRole.value = body.user.role
   return body
 }
 
@@ -184,6 +191,9 @@ export async function getCurrentUser(): Promise<CurrentUserProfile> {
     throw new Error('Serveren returnerede ugyldige profiloplysninger.')
   }
 
+  if (sessionStorage.getItem(ACCESS_TOKEN_KEY) === accessToken) {
+    userRole.value = body.user.role
+  }
   return body.user
 }
 
