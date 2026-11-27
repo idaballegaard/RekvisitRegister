@@ -11,6 +11,11 @@ Backend forbinder til MongoDB via værdier i `backend/.env`.
 5. Start backend med `npm --prefix backend run start-dev`. Når terminalen melder, at den er forbundet, kan du kontrollere forbindelsen på `http://localhost:3000/health`.
 
 Et vellykket health-check svarer med `{"status":"ok","database":"connected"}`.
+Reservationer, sletning af rekvisitter, afgørelser og aflevering af lån, brugeroprettelse og oprettelse af den første administrator bruger MongoDB-transaktioner, så databasen skal understøtte transaktioner (for eksempel MongoDB Atlas eller en lokal replica set). Godkendte lån og reservationer for samme rekvisit kan ikke overlappe, heller ikke på start- eller slutdagen. Når lånerforeningens foreningsansvarlige markerer et godkendt lån som afleveret, frigives rekvisitten straks uden bekræftelse fra ejerforeningen.
+
+Lånerforeningens foreningsansvarlige og rekvisitansvarlige kan annullere lån, som afventer svar eller er godkendt. Ved annullering af et godkendt lån frigives rekvisitten straks.
+
+Rekvisitter med lån, der afventer svar eller er godkendt, kan ikke slettes. Ved sletning af en rekvisit med afsluttede lån gemmes dens aktuelle navn på lånene, så historikken fortsat kan vises. Sletning og lagring af navnene sker i en MongoDB-transaktion.
 
 ## Første bruger og forening
 
@@ -65,4 +70,32 @@ På profilsiden kan brugeren sende et e-mailbekræftelseslink til sin adresse. F
 
 ## Backend med TypeScript
 
-Backendens TypeScript-kildekode ligger i `backend/src/` og er opdelt i `config`, `controllers`, `models`, `repositories`, `routes`, `services` og `scripts`. Start udviklingsserveren med `npm --prefix backend run start-dev`, byg med `npm --prefix backend run build`, og kør tests med `npm --prefix backend test`. Auth-integrationstestene bruger en isoleret MongoDB Memory Server og forbinder ikke til din konfigurerede database; første testkørsel kan hente en MongoDB-binary.
+Backendens TypeScript-kildekode ligger i `backend/src/` og er opdelt i `config`, `controllers`, `models`, `repositories`, `routes`, `services` og `scripts`. Start udviklingsserveren med `npm --prefix backend run start-dev`, byg med `npm --prefix backend run build`, og kør tests med `npm --prefix backend test`. Auth-integrationstestene bruger en isoleret MongoDB Memory replica set og forbinder ikke til din konfigurerede database; første testkørsel kan hente en MongoDB-binary.
+
+## Rekvisitbilleder lokalt
+
+Billeder gemmes som filer i `~/.rekvisit-register/images`. Stien kan ændres med
+`PROP_IMAGE_DIR` i `backend/.env`; den skal være absolut og pege på en privat mappe
+uden for projektet. Backend opretter mappen ved første upload. Sørg for, at den kun
+er tilgængelig for backendens bruger og ikke udstilles som en offentlig webmappe.
+MongoDB gemmer billed-id'er og rækkefølge på rekvisitten. Sikkerhedskopiér både
+databasen og billedmappen; en databasebackup indeholder ikke billedfilerne.
+
+Foreningsansvarlige og rekvisitansvarlige kan oprette en rekvisit via **Egne
+rekvisitter → Tilføj rekvisit**. Foreningen skal først have mindst én lageradresse. Billeder kan vælges
+under oprettelsen og uploades, når rekvisitten er oprettet. Hvis en upload fejler,
+er rekvisitten stadig gemt; kontrollér billederne på detaljesiden og tilføj eventuelt
+manglende billeder via **Redigér**. Billeder kan også tilføjes senere.
+
+Under **Brugere** kan foreningsansvarlige invitere rekvisitansvarlige og søgebrugere.
+Den inviterede får et engangslink, der udløber efter 24 timer, og vælger selv sin
+adgangskode. Uafsluttede invitationer kan sendes igen fra brugerlisten.
+
+Foreningsansvarlige og rekvisitansvarlige kan tilføje op til 10 billeder pr. rekvisit
+og fjerne dem igen.
+JPEG, PNG og WebP på op til 5 MiB pr. fil accepteres. Serveren kontrollerer filens
+indhold, afviser animerede billeder og billeder over 40 millioner pixels og gemmer en
+genkodet WebP uden billedmetadata. Upload og sletning kræver en foreningsansvarlig
+eller rekvisitansvarlig;
+hentning kræver login og adgang til rekvisitter i samme forening. Det første billede
+vises på rekvisitkortet.

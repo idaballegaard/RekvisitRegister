@@ -10,6 +10,116 @@ export async function createUser(user: UserDocument, session: ClientSession): Pr
   await getDatabase().collection<UserDocument>('users').insertOne(user, { session })
 }
 
+export async function listUsersByAssociation(
+  associationId: ObjectId,
+): Promise<WithId<UserDocument>[]> {
+  return getDatabase().collection<UserDocument>('users')
+    .find({ associationId }, {
+      projection: {
+        firstName: 1,
+        lastName: 1,
+        userName: 1,
+        email: 1,
+        emailVerifiedAt: 1,
+        invitationTokenHash: 1,
+        role: 1,
+        createdAt: 1,
+      },
+    })
+    .sort({ firstName: 1, lastName: 1, _id: 1 })
+    .toArray()
+}
+
+export async function deleteUserById(userId: ObjectId): Promise<void> {
+  await getDatabase().collection<UserDocument>('users').deleteOne({ _id: userId })
+}
+
+export async function findUserByInvitationToken(
+  tokenHash: string,
+  now: Date,
+): Promise<WithId<UserDocument> | null> {
+  return getDatabase().collection<UserDocument>('users').findOne({
+    invitationTokenHash: tokenHash,
+    invitationExpiresAt: { $gt: now },
+  })
+}
+
+export async function findPendingUserByIdForAssociation(
+  userId: ObjectId,
+  associationId: ObjectId,
+): Promise<WithId<UserDocument> | null> {
+  return getDatabase().collection<UserDocument>('users').findOne({
+    _id: userId,
+    associationId,
+    emailVerifiedAt: { $exists: false },
+    invitationTokenHash: { $exists: true },
+  })
+}
+
+export async function replaceUserInvitationToken(
+  userId: ObjectId,
+  associationId: ObjectId,
+  previousTokenHash: string,
+  nextTokenHash: string,
+  expiresAt: Date,
+): Promise<boolean> {
+  const result = await getDatabase().collection<UserDocument>('users').updateOne(
+    { _id: userId, associationId, invitationTokenHash: previousTokenHash },
+    { $set: { invitationTokenHash: nextTokenHash, invitationExpiresAt: expiresAt } },
+  )
+  return result.modifiedCount === 1
+}
+
+export async function restoreUserInvitationToken(
+  userId: ObjectId,
+  associationId: ObjectId,
+  currentTokenHash: string,
+  previousTokenHash: string,
+  previousExpiresAt: Date | undefined,
+): Promise<boolean> {
+  const result = await getDatabase().collection<UserDocument>('users').updateOne(
+    { _id: userId, associationId, invitationTokenHash: currentTokenHash },
+    previousExpiresAt
+      ? {
+          $set: {
+            invitationTokenHash: previousTokenHash,
+            invitationExpiresAt: previousExpiresAt,
+          },
+        }
+      : {
+          $set: { invitationTokenHash: previousTokenHash },
+          $unset: { invitationExpiresAt: '' },
+        },
+  )
+  return result.modifiedCount === 1
+}
+
+export async function acceptUserInvitation(
+  userId: ObjectId,
+  tokenHash: string,
+  passwordHash: string,
+  now: Date,
+): Promise<boolean> {
+  const result = await getDatabase().collection<UserDocument>('users').updateOne(
+    {
+      _id: userId,
+      invitationTokenHash: tokenHash,
+      invitationExpiresAt: { $gt: now },
+      emailVerifiedAt: { $exists: false },
+    },
+    {
+      $set: { passwordHash, emailVerifiedAt: now, updatedAt: now },
+      $unset: {
+        invitationTokenHash: '',
+        invitationExpiresAt: '',
+        passwordResetTokenHash: '',
+        passwordResetExpiresAt: '',
+      },
+    },
+  )
+  return result.modifiedCount === 1
+}
+
 export async function findUserByUserName(userName: string): Promise<WithId<UserDocument> | null> {
   return getDatabase().collection<UserDocument>('users').findOne({ userName })
 }

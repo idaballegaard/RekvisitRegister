@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { useRouter } from 'vue-router'
 import {
   changePassword,
@@ -169,6 +170,15 @@ onMounted(async () => {
             </p>
           </div>
         </div>
+        <RouterLink
+          v-if="profile?.role === 'associationAdmin' || profile?.role === 'propManager'"
+          class="mt-4 inline-block text-xs text-brand underline underline-offset-2"
+          :to="profile.role === 'propManager'
+            ? { name: 'admin', query: { tab: 'props' } }
+            : { name: 'admin' }"
+        >
+          {{ profile.role === 'propManager' ? 'Gå til egne rekvisitter →' : 'Gå til adminpanel →' }}
+        </RouterLink>
       </header>
 
       <div

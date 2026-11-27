@@ -15,6 +15,8 @@ export const PERMISSIONS = {
   SEARCH_PROPS: 'searchProps',
   REQUEST_LOANS: 'requestLoans',
   APPROVE_LOANS: 'approveLoans',
+  VIEW_LOANS: 'viewLoans',
+  CANCEL_LOANS: 'cancelLoans',
 } as const
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS]
@@ -26,6 +28,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
     PERMISSIONS.SEARCH_PROPS,
     PERMISSIONS.REQUEST_LOANS,
     PERMISSIONS.APPROVE_LOANS,
+    PERMISSIONS.VIEW_LOANS,
+    PERMISSIONS.CANCEL_LOANS,
   ],
   [ROLES.SEARCH_USER]: [PERMISSIONS.SEARCH_PROPS, PERMISSIONS.REQUEST_LOANS],
 }
@@ -38,6 +42,8 @@ export interface UserDocument {
   emailVerifiedAt?: Date
   emailVerificationTokenHash?: string
   emailVerificationExpiresAt?: Date
+  invitationTokenHash?: string
+  invitationExpiresAt?: Date
   passwordHash: string
   passwordResetTokenHash?: string
   passwordResetExpiresAt?: Date

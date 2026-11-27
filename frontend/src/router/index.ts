@@ -20,9 +20,32 @@ const router = createRouter({
       component: () => import('../views/VerifyEmailView.vue'),
     },
     {
+      path: '/accept-invitation',
+      name: 'accept-invitation',
+      component: () => import('../views/AcceptInvitationView.vue'),
+    },
+    {
       path: '/profile',
       name: 'profile',
       component: () => import('../views/ProfileView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/admin/props/new',
+      name: 'admin-prop-create',
+      component: () => import('../views/admin/PropCreateView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/admin/props/:propId',
+      name: 'admin-prop-detail',
+      component: () => import('../views/admin/PropDetailView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/admin',
+      name: 'admin',
+      component: () => import('../views/admin/AdminView.vue'),
       meta: { requiresAuth: true },
     },
   ],
